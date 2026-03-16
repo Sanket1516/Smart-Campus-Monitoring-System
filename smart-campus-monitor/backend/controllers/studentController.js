@@ -1,0 +1,85 @@
+const Student = require('../models/Student');
+
+// GET /api/students/:sapId
+exports.getStudentBySapId = async (req, res) => {
+  try {
+    const student = await Student.findOne({ sapId: req.params.sapId });
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+    res.json(student);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/students
+exports.getAllStudents = async (req, res) => {
+  try {
+    const { category, search, page = 1, limit = 50 } = req.query;
+    const filter = { isActive: true };
+
+    if (category) filter.category = category;
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { sapId: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const students = await Student.find(filter)
+      .sort({ name: 1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+
+    const total = await Student.countDocuments(filter);
+
+    res.json({ students, total, page: Number(page), pages: Math.ceil(total / limit) });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// POST /api/students
+exports.createStudent = async (req, res) => {
+  try {
+    const student = await Student.create(req.body);
+    res.status(201).json(student);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// PUT /api/students/:sapId
+exports.updateStudent = async (req, res) => {
+  try {
+    const student = await Student.findOneAndUpdate(
+      { sapId: req.params.sapId },
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+    res.json(student);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// DELETE /api/students/:sapId
+exports.deleteStudent = async (req, res) => {
+  try {
+    const student = await Student.findOneAndUpdate(
+      { sapId: req.params.sapId },
+      { isActive: false },
+      { new: true }
+    );
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+    res.json({ message: 'Student deactivated' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
