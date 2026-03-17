@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   mongodb:
     image: mongo:7
@@ -13,6 +11,12 @@ services:
       - campus-network
     environment:
       MONGO_INITDB_DATABASE: smart_campus
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   backend:
     build:
@@ -23,15 +27,17 @@ services:
     ports:
       - "5000:5000"
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     networks:
       - campus-network
+    env_file:
+      - ./backend/.env
     environment:
       NODE_ENV: production
-      PORT: 5000
       MONGO_URI: mongodb://mongodb:27017/smart_campus
-      JWT_SECRET: change_this_to_a_secure_secret
-      JWT_EXPIRE: 24h
+      CLIENT_URL: http://localhost
+      TZ: Asia/Kolkata
 
   frontend:
     build:
