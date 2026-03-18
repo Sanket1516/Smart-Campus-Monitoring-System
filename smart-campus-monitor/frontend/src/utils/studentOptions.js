@@ -12,8 +12,8 @@ export const COURSE_OPTIONS = [
 
 export const DEPARTMENT_OPTIONS = {
   engineering: [
-    { value: 'cs', label: 'CS' },
-    { value: 'ce', label: 'CE' },
+    { value: 'computer science', label: 'Computer Science' },
+    { value: 'computer engineering', label: 'Computer Engineering' },
   ],
   pharmacy: [{ value: 'bpharm', label: 'BPharm' }],
   mbatech: [{ value: 'mbatech', label: 'MBA Tech' }],

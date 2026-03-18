@@ -15,6 +15,7 @@ const scanRoutes = require('./routes/scan');
 const logRoutes = require('./routes/logs');
 const dashboardRoutes = require('./routes/dashboard');
 const notifyRoutes = require('./routes/notify');
+const visitorRoutes = require('./routes/visitors');
 
 const app = express();
 
@@ -54,6 +55,7 @@ app.use('/api/scan', scanRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notify', notifyRoutes);
+app.use('/api/visitors', visitorRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

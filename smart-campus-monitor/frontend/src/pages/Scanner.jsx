@@ -1,15 +1,28 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import BarcodeScanner from '../components/BarcodeScanner';
 import OcrScanner from '../components/OcrScanner';
-import { processScanApi } from '../services/api';
+import { createVisitorEntryApi, getVisitorEntriesApi, processScanApi } from '../services/api';
 import toast from 'react-hot-toast';
 import {
   HiOutlineCheckCircle,
   HiOutlineExclamationCircle,
   HiOutlineCamera,
   HiOutlinePause,
+  HiOutlineUserAdd,
+  HiOutlineOfficeBuilding,
+  HiOutlineClock,
 } from 'react-icons/hi';
 import { getCategoryLabel } from '../utils/studentOptions';
+
+const createInitialVisitorForm = () => ({
+  visitorName: '',
+  phoneNumber: '',
+  personToMeet: '',
+  meetingReason: '',
+  organization: '',
+  idProof: '',
+  remarks: '',
+});
 
 export default function Scanner() {
   const [scanning, setScanning] = useState(true);
@@ -17,6 +30,22 @@ export default function Scanner() {
   const [lastScan, setLastScan] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [manualInput, setManualInput] = useState('');
+  const [visitorForm, setVisitorForm] = useState(createInitialVisitorForm);
+  const [addingVisitor, setAddingVisitor] = useState(false);
+  const [recentVisitors, setRecentVisitors] = useState([]);
+
+  const loadVisitors = useCallback(async () => {
+    try {
+      const res = await getVisitorEntriesApi({ limit: 5 });
+      setRecentVisitors(res.data.visitors || []);
+    } catch (err) {
+      console.error('Visitor load error:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadVisitors();
+  }, [loadVisitors]);
 
   const handleScan = useCallback(
     async (sapId) => {
@@ -50,6 +79,26 @@ export default function Scanner() {
     if (manualInput.trim()) {
       handleScan(manualInput.trim());
       setManualInput('');
+    }
+  };
+
+  const handleVisitorChange = (field, value) => {
+    setVisitorForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleVisitorSubmit = async (e) => {
+    e.preventDefault();
+    setAddingVisitor(true);
+
+    try {
+      const res = await createVisitorEntryApi(visitorForm);
+      toast.success('Visitor entry recorded');
+      setVisitorForm(createInitialVisitorForm());
+      setRecentVisitors((current) => [res.data.visitor, ...current].slice(0, 5));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save visitor entry');
+    } finally {
+      setAddingVisitor(false);
     }
   };
 
@@ -141,6 +190,151 @@ export default function Scanner() {
             Submit
           </button>
         </form>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-5">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+              <HiOutlineUserAdd className="w-5 h-5 text-primary-600" />
+              Visitor Entry
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Record walk-in visitors coming for meetings, office work, or deliveries.
+            </p>
+          </div>
+          <div className="text-sm text-gray-500">
+            Saved entries are timestamped automatically at the gate.
+          </div>
+        </div>
+
+        <form onSubmit={handleVisitorSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Visitor Name</label>
+            <input
+              type="text"
+              value={visitorForm.visitorName}
+              onChange={(e) => handleVisitorChange('visitorName', e.target.value)}
+              placeholder="Enter full name"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Phone Number</label>
+            <input
+              type="tel"
+              value={visitorForm.phoneNumber}
+              onChange={(e) => handleVisitorChange('phoneNumber', e.target.value)}
+              placeholder="Enter contact number"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Person To Meet</label>
+            <input
+              type="text"
+              value={visitorForm.personToMeet}
+              onChange={(e) => handleVisitorChange('personToMeet', e.target.value)}
+              placeholder="Faculty, office, or student name"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Meeting Reason</label>
+            <input
+              type="text"
+              value={visitorForm.meetingReason}
+              onChange={(e) => handleVisitorChange('meetingReason', e.target.value)}
+              placeholder="Admission, meeting, delivery, etc."
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Organization</label>
+            <input
+              type="text"
+              value={visitorForm.organization}
+              onChange={(e) => handleVisitorChange('organization', e.target.value)}
+              placeholder="Company or institution"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">ID Proof</label>
+            <input
+              type="text"
+              value={visitorForm.idProof}
+              onChange={(e) => handleVisitorChange('idProof', e.target.value)}
+              placeholder="Aadhaar, PAN, license, etc."
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-600 mb-1">Remarks</label>
+            <textarea
+              value={visitorForm.remarks}
+              onChange={(e) => handleVisitorChange('remarks', e.target.value)}
+              placeholder="Extra notes for gate security"
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none resize-none"
+            />
+          </div>
+          <div className="md:col-span-2 flex justify-end">
+            <button
+              type="submit"
+              disabled={addingVisitor}
+              className="px-6 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-60"
+            >
+              {addingVisitor ? 'Saving...' : 'Save Visitor Entry'}
+            </button>
+          </div>
+        </form>
+
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex items-center gap-2 mb-3 text-gray-700">
+            <HiOutlineClock className="w-5 h-5 text-primary-600" />
+            <h4 className="font-medium">Recent Visitor Entries</h4>
+          </div>
+          {recentVisitors.length === 0 ? (
+            <p className="text-sm text-gray-400">No visitor entries recorded today.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {recentVisitors.map((visitor) => (
+                <div
+                  key={visitor._id}
+                  className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-gray-800">{visitor.visitorName}</p>
+                      <p className="text-gray-500">{visitor.phoneNumber}</p>
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      {new Date(visitor.checkInTime).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-1 text-gray-600">
+                    <p><span className="font-medium text-gray-700">Meeting:</span> {visitor.personToMeet}</p>
+                    <p><span className="font-medium text-gray-700">Reason:</span> {visitor.meetingReason}</p>
+                    {visitor.organization && (
+                      <p className="flex items-center gap-1">
+                        <HiOutlineOfficeBuilding className="w-4 h-4" />
+                        <span>{visitor.organization}</span>
+                      </p>
+                    )}
+                    {visitor.idProof && (
+                      <p><span className="font-medium text-gray-700">ID:</span> {visitor.idProof}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Scan Result */}

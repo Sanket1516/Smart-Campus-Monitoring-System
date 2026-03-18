@@ -14,17 +14,17 @@ const UnauthorizedLog = require('../models/UnauthorizedLog');
 const { isHosteller } = require('./studentMeta');
 
 const students = [
-  { sapId: '70552300067', name: 'Sanket (Test Card)', email: 'sanket@college.edu', parentEmail: 'parent.sanket@gmail.com', parentPhone: '9699980709', category: 'dayscholars', course: 'engineering', department: 'cs', year: 3 },
-  { sapId: '500091001', name: 'Aarav Sharma', email: 'aarav@college.edu', parentEmail: 'parent.aarav@gmail.com', parentPhone: '9876543210', category: 'dayscholars', course: 'engineering', department: 'cs', year: 3 },
+  { sapId: '70552300067', name: 'Sanket (Test Card)', email: 'sanket@college.edu', parentEmail: 'parent.sanket@gmail.com', parentPhone: '9699980709', category: 'dayscholars', course: 'engineering', department: 'computer science', year: 3 },
+  { sapId: '500091001', name: 'Aarav Sharma', email: 'aarav@college.edu', parentEmail: 'parent.aarav@gmail.com', parentPhone: '9876543210', category: 'dayscholars', course: 'engineering', department: 'computer science', year: 3 },
   { sapId: '500091002', name: 'Priya Patel', email: 'priya@college.edu', parentEmail: 'parent.priya@gmail.com', parentPhone: '9876543211', category: 'dayscholars', course: 'pharmacy', department: 'bpharm', year: 3 },
-  { sapId: '500091003', name: 'Rohan Gupta', email: 'rohan@college.edu', parentEmail: 'parent.rohan@gmail.com', parentPhone: '9876543212', category: 'hostellers', course: 'engineering', department: 'ce', year: 2 },
+  { sapId: '500091003', name: 'Rohan Gupta', email: 'rohan@college.edu', parentEmail: 'parent.rohan@gmail.com', parentPhone: '9876543212', category: 'hostellers', course: 'engineering', department: 'computer engineering', year: 2 },
   { sapId: '500091004', name: 'Sneha Reddy', email: 'sneha@college.edu', parentEmail: 'parent.sneha@gmail.com', parentPhone: '9876543213', category: 'hostellers', course: 'pharmatech', department: 'pharmatech', year: 4 },
-  { sapId: '500091005', name: 'Vikram Singh', email: 'vikram@college.edu', parentEmail: 'parent.vikram@gmail.com', parentPhone: '9876543214', category: 'dayscholars', course: 'engineering', department: 'ce', year: 2 },
+  { sapId: '500091005', name: 'Vikram Singh', email: 'vikram@college.edu', parentEmail: 'parent.vikram@gmail.com', parentPhone: '9876543214', category: 'dayscholars', course: 'engineering', department: 'computer engineering', year: 2 },
   { sapId: '500091006', name: 'Ananya Iyer', email: 'ananya@college.edu', parentEmail: 'parent.ananya@gmail.com', parentPhone: '9876543215', category: 'hostellers', course: 'pharmacy', department: 'bpharm', year: 1 },
   { sapId: '500091007', name: 'Karthik Nair', email: 'karthik@college.edu', parentEmail: 'parent.karthik@gmail.com', parentPhone: '9876543216', category: 'dayscholars', course: 'mbatech', department: 'mbatech', year: 3 },
-  { sapId: '500091008', name: 'Meera Joshi', email: 'meera@college.edu', parentEmail: 'parent.meera@gmail.com', parentPhone: '9876543217', category: 'hostellers', course: 'engineering', department: 'cs', year: 2 },
+  { sapId: '500091008', name: 'Meera Joshi', email: 'meera@college.edu', parentEmail: 'parent.meera@gmail.com', parentPhone: '9876543217', category: 'hostellers', course: 'engineering', department: 'computer science', year: 2 },
   { sapId: '500091009', name: 'Arjun Desai', email: 'arjun@college.edu', parentEmail: 'parent.arjun@gmail.com', parentPhone: '9876543218', category: 'dayscholars', course: 'pharmacy', department: 'bpharm', year: 4 },
-  { sapId: '500091010', name: 'Divya Kulkarni', email: 'divya@college.edu', parentEmail: 'parent.divya@gmail.com', parentPhone: '9876543219', category: 'dayscholars', course: 'engineering', department: 'cs', year: 3 },
+  { sapId: '500091010', name: 'Divya Kulkarni', email: 'divya@college.edu', parentEmail: 'parent.divya@gmail.com', parentPhone: '9876543219', category: 'dayscholars', course: 'engineering', department: 'computer science', year: 3 },
 ];
 
 const admins = [

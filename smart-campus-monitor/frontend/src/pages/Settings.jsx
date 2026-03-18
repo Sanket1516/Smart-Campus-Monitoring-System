@@ -20,7 +20,7 @@ const createInitialForm = () => ({
   parentPhone: '',
   category: 'dayscholars',
   course: 'engineering',
-  department: 'cs',
+  department: 'computer science',
   year: 3,
 });
 

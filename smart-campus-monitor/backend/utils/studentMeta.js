@@ -7,7 +7,7 @@ const COURSE_OPTIONS = ['pharmacy', 'engineering', 'mbatech', 'pharmatech'];
 
 const DEPARTMENT_OPTIONS = {
   pharmacy: ['bpharm'],
-  engineering: ['cs', 'ce'],
+  engineering: ['computer science', 'computer engineering'],
   mbatech: ['mbatech'],
   pharmatech: ['pharmatech'],
 };

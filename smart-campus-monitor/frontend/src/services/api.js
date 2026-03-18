@@ -54,4 +54,8 @@ export const getHostellerStatusApi = () => api.get('/dashboard/hostellers');
 // Notify
 export const sendNotifyApi = (data) => api.post('/notify', data);
 
+// Visitors
+export const createVisitorEntryApi = (data) => api.post('/visitors', data);
+export const getVisitorEntriesApi = (params) => api.get('/visitors', { params });
+
 export default api;
