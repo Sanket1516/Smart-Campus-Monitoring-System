@@ -13,7 +13,7 @@ const entryLogSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ['day_scholar', 'hosteller'],
+      enum: ['day_scholar', 'hosteller', 'dayscholars', 'hostellers'],
     },
     date: {
       type: String, // YYYY-MM-DD

@@ -1,15 +1,22 @@
 const EntryLog = require('../models/EntryLog');
 const UnauthorizedLog = require('../models/UnauthorizedLog');
+const { CATEGORY_ALIASES, normalizeCategory } = require('../utils/studentMeta');
 
 // GET /api/logs
 exports.getLogs = async (req, res) => {
   try {
-    const { date, sapId, category, status, page = 1, limit = 50 } = req.query;
+    const { date, sapId, sapid, category, status, page = 1, limit = 50 } = req.query;
     const filter = {};
+    const sapIdQuery = (sapId || sapid || '').trim();
 
     if (date) filter.date = date;
-    if (sapId) filter.sapId = sapId;
-    if (category) filter.category = category;
+    if (sapIdQuery) filter.sapId = { $regex: sapIdQuery, $options: 'i' };
+    if (category) {
+      const normalizedCategory = normalizeCategory(category);
+      filter.category = CATEGORY_ALIASES[normalizedCategory]
+        ? { $in: CATEGORY_ALIASES[normalizedCategory] }
+        : normalizedCategory;
+    }
     if (status) filter.status = status;
 
     const logs = await EntryLog.find(filter)

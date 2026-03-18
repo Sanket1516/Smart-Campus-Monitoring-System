@@ -2,6 +2,7 @@ const Student = require('../models/Student');
 const EntryLog = require('../models/EntryLog');
 const UnauthorizedLog = require('../models/UnauthorizedLog');
 const { notifyParent } = require('../services/notification');
+const { isHosteller } = require('../utils/studentMeta');
 
 // Helper: get today's date string
 const todayStr = () => new Date().toISOString().split('T')[0];
@@ -56,7 +57,7 @@ exports.processScan = async (req, res) => {
       log.status = 'exited';
 
       // Check late return for hostellers
-      if (student.category === 'hosteller') {
+      if (isHosteller(student.category)) {
         const curfewHour = Number(process.env.CURFEW_HOUR) || 22;
         if (now.getHours() >= curfewHour) {
           log.lateReturn = true;

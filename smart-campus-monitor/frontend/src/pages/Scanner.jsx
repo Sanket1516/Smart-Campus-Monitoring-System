@@ -9,6 +9,7 @@ import {
   HiOutlineCamera,
   HiOutlinePause,
 } from 'react-icons/hi';
+import { getCategoryLabel } from '../utils/studentOptions';
 
 export default function Scanner() {
   const [scanning, setScanning] = useState(true);
@@ -171,7 +172,7 @@ export default function Scanner() {
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm text-green-700">
                   <p><span className="font-medium">SAP ID:</span> {lastScan.student.sapId}</p>
-                  <p><span className="font-medium">Category:</span> {lastScan.student.category === 'hosteller' ? 'Hosteller' : 'Day Scholar'}</p>
+                  <p><span className="font-medium">Category:</span> {getCategoryLabel(lastScan.student.category)}</p>
                   <p><span className="font-medium">Department:</span> {lastScan.student.department}</p>
                   <p><span className="font-medium">Year:</span> {lastScan.student.year}</p>
                   {lastScan.log.entryTime && (

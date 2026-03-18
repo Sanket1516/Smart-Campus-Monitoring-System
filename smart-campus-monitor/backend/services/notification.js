@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { isHosteller } = require('../utils/studentMeta');
 
 let transporter = null;
 
@@ -110,7 +111,7 @@ const notifyParent = async (student, action, timestamp) => {
           <tr><td style="padding: 8px; border-bottom: 1px solid #e2e8f0;"><strong>Date</strong></td>
               <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${date}</td></tr>
           <tr><td style="padding: 8px;"><strong>Category</strong></td>
-              <td style="padding: 8px;">${student.category === 'hosteller' ? 'Hosteller' : 'Day Scholar'}</td></tr>
+              <td style="padding: 8px;">${isHosteller(student.category) ? 'Hostellers' : 'Dayscholars'}</td></tr>
         </table>
         <p style="color: #64748b; font-size: 12px;">This is an automated notification from the Smart Campus Monitoring System.</p>
       </div>

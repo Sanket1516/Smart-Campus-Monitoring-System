@@ -1,4 +1,18 @@
 const Student = require('../models/Student');
+const {
+  normalizeCategory,
+  normalizeCourse,
+  normalizeDepartment,
+} = require('../utils/studentMeta');
+
+const normalizeStudentPayload = (payload = {}) => ({
+  ...payload,
+  ...(payload.category !== undefined ? { category: normalizeCategory(payload.category) } : {}),
+  ...(payload.course !== undefined ? { course: normalizeCourse(payload.course) } : {}),
+  ...(payload.department !== undefined
+    ? { department: normalizeDepartment(payload.department) }
+    : {}),
+});
 
 // GET /api/students/:sapId
 exports.getStudentBySapId = async (req, res) => {
@@ -43,7 +57,7 @@ exports.getAllStudents = async (req, res) => {
 // POST /api/students
 exports.createStudent = async (req, res) => {
   try {
-    const student = await Student.create(req.body);
+    const student = await Student.create(normalizeStudentPayload(req.body));
     res.status(201).json(student);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -55,7 +69,7 @@ exports.updateStudent = async (req, res) => {
   try {
     const student = await Student.findOneAndUpdate(
       { sapId: req.params.sapId },
-      req.body,
+      normalizeStudentPayload(req.body),
       { new: true, runValidators: true }
     );
     if (!student) {

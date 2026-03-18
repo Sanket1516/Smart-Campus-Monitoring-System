@@ -1,22 +1,57 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { createStudentApi } from '../services/api';
+import { createStudentApi, getStudentsApi } from '../services/api';
 import toast from 'react-hot-toast';
 import { HiOutlineCog, HiOutlineUserAdd } from 'react-icons/hi';
+import {
+  CATEGORY_OPTIONS,
+  COURSE_OPTIONS,
+  getCategoryLabel,
+  getCourseLabel,
+  getDepartmentLabel,
+  getDepartmentOptions,
+} from '../utils/studentOptions';
+
+const createInitialForm = () => ({
+  sapId: '',
+  name: '',
+  email: '',
+  parentEmail: '',
+  parentPhone: '',
+  category: 'dayscholars',
+  course: 'engineering',
+  department: 'cs',
+  year: 3,
+});
 
 export default function Settings() {
   const { admin } = useAuth();
-  const [studentForm, setStudentForm] = useState({
-    sapId: '',
-    name: '',
-    email: '',
-    parentEmail: '',
-    parentPhone: '',
-    category: 'day_scholar',
-    department: '',
-    year: 3,
-  });
+  const [studentForm, setStudentForm] = useState(createInitialForm);
   const [adding, setAdding] = useState(false);
+  const [students, setStudents] = useState([]);
+  const [loadingStudents, setLoadingStudents] = useState(true);
+
+  const departmentOptions = getDepartmentOptions(studentForm.course);
+
+  const loadStudents = async () => {
+    setLoadingStudents(true);
+    try {
+      const res = await getStudentsApi({ limit: 100 });
+      setStudents(res.data.students || []);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to load students');
+    } finally {
+      setLoadingStudents(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStudents();
+  }, []);
+
+  const updateForm = (updates) => {
+    setStudentForm((current) => ({ ...current, ...updates }));
+  };
 
   const handleAddStudent = async (e) => {
     e.preventDefault();
@@ -24,16 +59,8 @@ export default function Settings() {
     try {
       await createStudentApi(studentForm);
       toast.success('Student added successfully');
-      setStudentForm({
-        sapId: '',
-        name: '',
-        email: '',
-        parentEmail: '',
-        parentPhone: '',
-        category: 'day_scholar',
-        department: '',
-        year: 3,
-      });
+      setStudentForm(createInitialForm());
+      loadStudents();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to add student');
     } finally {
@@ -81,7 +108,7 @@ export default function Settings() {
               <input
                 type="text"
                 value={studentForm.sapId}
-                onChange={(e) => setStudentForm({ ...studentForm, sapId: e.target.value })}
+                onChange={(e) => updateForm({ sapId: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                 required
               />
@@ -91,7 +118,7 @@ export default function Settings() {
               <input
                 type="text"
                 value={studentForm.name}
-                onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })}
+                onChange={(e) => updateForm({ name: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                 required
               />
@@ -101,7 +128,7 @@ export default function Settings() {
               <input
                 type="email"
                 value={studentForm.email}
-                onChange={(e) => setStudentForm({ ...studentForm, email: e.target.value })}
+                onChange={(e) => updateForm({ email: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                 required
               />
@@ -111,7 +138,7 @@ export default function Settings() {
               <input
                 type="email"
                 value={studentForm.parentEmail}
-                onChange={(e) => setStudentForm({ ...studentForm, parentEmail: e.target.value })}
+                onChange={(e) => updateForm({ parentEmail: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
               />
             </div>
@@ -120,7 +147,7 @@ export default function Settings() {
               <input
                 type="tel"
                 value={studentForm.parentPhone}
-                onChange={(e) => setStudentForm({ ...studentForm, parentPhone: e.target.value })}
+                onChange={(e) => updateForm({ parentPhone: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
               />
             </div>
@@ -128,27 +155,56 @@ export default function Settings() {
               <label className="block text-sm font-medium text-gray-600 mb-1">Category</label>
               <select
                 value={studentForm.category}
-                onChange={(e) => setStudentForm({ ...studentForm, category: e.target.value })}
+                onChange={(e) => updateForm({ category: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
               >
-                <option value="day_scholar">Day Scholar</option>
-                <option value="hosteller">Hosteller</option>
+                {CATEGORY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Course</label>
+              <select
+                value={studentForm.course}
+                onChange={(e) => {
+                  const nextCourse = e.target.value;
+                  const nextDepartments = getDepartmentOptions(nextCourse);
+                  updateForm({
+                    course: nextCourse,
+                    department: nextDepartments[0]?.value || '',
+                  });
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+              >
+                {COURSE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">Department</label>
-              <input
-                type="text"
+              <select
                 value={studentForm.department}
-                onChange={(e) => setStudentForm({ ...studentForm, department: e.target.value })}
+                onChange={(e) => updateForm({ department: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-              />
+              >
+                {departmentOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">Year</label>
               <select
                 value={studentForm.year}
-                onChange={(e) => setStudentForm({ ...studentForm, year: Number(e.target.value) })}
+                onChange={(e) => updateForm({ year: Number(e.target.value) })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
               >
                 {[1, 2, 3, 4, 5].map((y) => (
@@ -168,6 +224,53 @@ export default function Settings() {
           </form>
         </div>
       )}
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="font-semibold text-gray-700">Student List</h2>
+          <p className="text-sm text-gray-500">Current registered students and their course mapping</p>
+        </div>
+        {loadingStudents ? (
+          <div className="flex items-center justify-center h-32">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium">SAP ID</th>
+                  <th className="text-left px-4 py-3 font-medium">Name</th>
+                  <th className="text-left px-4 py-3 font-medium">Category</th>
+                  <th className="text-left px-4 py-3 font-medium">Course</th>
+                  <th className="text-left px-4 py-3 font-medium">Department</th>
+                  <th className="text-left px-4 py-3 font-medium">Year</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {students.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                      No students found
+                    </td>
+                  </tr>
+                ) : (
+                  students.map((student) => (
+                    <tr key={student._id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-mono">{student.sapId}</td>
+                      <td className="px-4 py-3 font-medium">{student.name}</td>
+                      <td className="px-4 py-3">{getCategoryLabel(student.category)}</td>
+                      <td className="px-4 py-3">{getCourseLabel(student.course)}</td>
+                      <td className="px-4 py-3">{getDepartmentLabel(student.course, student.department)}</td>
+                      <td className="px-4 py-3">{student.year || '-'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* System info */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">

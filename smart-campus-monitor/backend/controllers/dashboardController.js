@@ -1,6 +1,7 @@
 const Student = require('../models/Student');
 const EntryLog = require('../models/EntryLog');
 const UnauthorizedLog = require('../models/UnauthorizedLog');
+const { CATEGORY_ALIASES, isHosteller } = require('../utils/studentMeta');
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 
@@ -19,8 +20,8 @@ exports.getDashboardStats = async (req, res) => {
       last7DaysLogs,
     ] = await Promise.all([
       Student.countDocuments({ isActive: true }),
-      Student.countDocuments({ isActive: true, category: 'day_scholar' }),
-      Student.countDocuments({ isActive: true, category: 'hosteller' }),
+      Student.countDocuments({ isActive: true, category: { $in: CATEGORY_ALIASES.dayscholars } }),
+      Student.countDocuments({ isActive: true, category: { $in: CATEGORY_ALIASES.hostellers } }),
       EntryLog.find({ date: today }),
       UnauthorizedLog.countDocuments({ date: today }),
       EntryLog.aggregate([
@@ -62,7 +63,7 @@ exports.getDashboardStats = async (req, res) => {
     }
 
     // Hostellers currently outside
-    const hostellerLogs = todayLogs.filter((l) => l.category === 'hosteller');
+    const hostellerLogs = todayLogs.filter((l) => isHosteller(l.category));
     const hostellersOutside = new Set();
     const hostellerMap = {};
     for (const log of hostellerLogs) {
@@ -145,8 +146,14 @@ exports.getHourlyDistribution = async (req, res) => {
 exports.getHostellerStatus = async (req, res) => {
   try {
     const today = todayStr();
-    const hostellers = await Student.find({ category: 'hosteller', isActive: true });
-    const logs = await EntryLog.find({ date: today, category: 'hosteller' });
+    const hostellers = await Student.find({
+      category: { $in: CATEGORY_ALIASES.hostellers },
+      isActive: true,
+    });
+    const logs = await EntryLog.find({
+      date: today,
+      category: { $in: CATEGORY_ALIASES.hostellers },
+    });
 
     const logMap = {};
     for (const log of logs) {

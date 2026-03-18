@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 import { getLogsApi, getUnauthorizedLogsApi } from '../services/api';
 import { HiOutlineSearch, HiOutlineFilter, HiOutlineExclamationCircle } from 'react-icons/hi';
+import {
+  CATEGORY_OPTIONS,
+  getCategoryLabel,
+  getCategoryTone,
+} from '../utils/studentOptions';
 
 export default function StudentLogs() {
   const [logs, setLogs] = useState([]);
@@ -104,8 +109,11 @@ export default function StudentLogs() {
                 className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
               >
                 <option value="">All Categories</option>
-                <option value="day_scholar">Day Scholar</option>
-                <option value="hosteller">Hosteller</option>
+                {CATEGORY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
               <select
                 value={filters.status}
@@ -155,13 +163,9 @@ export default function StudentLogs() {
                         <td className="px-4 py-3">{log.studentName}</td>
                         <td className="px-4 py-3">
                           <span
-                            className={`px-2 py-0.5 rounded text-xs font-medium ${
-                              log.category === 'hosteller'
-                                ? 'bg-purple-100 text-purple-700'
-                                : 'bg-blue-100 text-blue-700'
-                            }`}
+                            className={`px-2 py-0.5 rounded text-xs font-medium ${getCategoryTone(log.category)}`}
                           >
-                            {log.category === 'hosteller' ? 'Hosteller' : 'Day Scholar'}
+                            {getCategoryLabel(log.category)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
