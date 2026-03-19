@@ -62,7 +62,7 @@ npm run dev
 |                          CLIENT  (Browser)                          |
 |                                                                     |
 |   +------------------+    +-------------------+    +--------------+ |
-|   | React (Vite)     |    | ZXing Barcode     |    | Chart.js     | |
+|   | React (Vite)     |    | html5-qrcode      |    | Chart.js     | |
 |   | React Router DOM |    | Scanner (Webcam)  |    | Analytics    | |
 |   | Tailwind CSS     |    |                   |    |              | |
 |   | Axios HTTP       |    |                   |    |              | |
@@ -125,7 +125,7 @@ npm run dev
 | React Router DOM 6 | Client-side routing with protected routes  |
 | Tailwind CSS 3     | Utility-first CSS framework                |
 | Axios              | HTTP client with interceptors              |
-| @zxing/browser     | Real-time barcode scanning from webcam     |
+| html5-qrcode       | Real-time barcode scanning from webcam     |
 | Tesseract.js 5     | OCR engine for reading printed SAP IDs     |
 | Chart.js 4         | Bar, Line, and Doughnut chart rendering    |
 | react-chartjs-2    | React wrapper for Chart.js                 |
@@ -138,7 +138,7 @@ npm run dev
 
 ### Core Functionality
 
-- **Webcam Barcode Scanning** -- Live camera feed decodes student ID card barcodes using the ZXing multi-format reader. A scan-target overlay guides the user to position the barcode within the frame.
+- **Webcam Barcode Scanning** -- Live camera feed decodes student ID card barcodes using the html5-qrcode webcam reader. A scan-target overlay guides the user to position the barcode within the frame.
 - **OCR Number Reader** -- Alternative scanning mode using Tesseract.js OCR engine. Automatically detects the teal-colored strip on the college ID card, extracts the 11-digit SAP ID printed on it, and processes the scan. Auto-scans every 2 seconds with a manual capture button as fallback.
 - **Manual SAP ID Entry** -- Fallback text input for manual entry when barcode scanning is not possible.
 - **Smart Entry/Exit Toggle** -- The system automatically determines whether a scan is an entry or exit based on the student's current state for the day:
@@ -398,7 +398,7 @@ smart-campus-monitor/
         |
         +-- components/
         |   +-- Layout.jsx        # Sidebar + top bar + Outlet
-        |   +-- BarcodeScanner.jsx # ZXing webcam barcode reader
+        |   +-- BarcodeScanner.jsx # html5-qrcode webcam barcode reader
         |   +-- StatCard.jsx      # Reusable statistic card
         |
         +-- pages/

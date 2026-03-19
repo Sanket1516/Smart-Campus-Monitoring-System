@@ -10,8 +10,10 @@ import {
   HiOutlineLogout,
   HiOutlineMenu,
   HiOutlineX,
+  HiOutlineMoon,
+  HiOutlineSun,
 } from 'react-icons/hi';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const navItems = [
   { to: '/dashboard', icon: HiOutlineViewGrid, label: 'Dashboard' },
@@ -26,6 +28,17 @@ export default function Layout() {
   const { admin, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const savedTheme = window.localStorage.getItem('smart-campus-theme');
+    if (savedTheme) return savedTheme === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    window.localStorage.setItem('smart-campus-theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
 
   const handleLogout = () => {
     logout();
@@ -82,7 +95,7 @@ export default function Layout() {
   );
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-gray-50 text-gray-900 dark:bg-slate-950 dark:text-slate-100">
       {/* Desktop sidebar */}
       <aside className="hidden md:block w-64 flex-shrink-0">{sidebar}</aside>
 
@@ -100,9 +113,9 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-4 md:px-6">
+        <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-4 md:px-6 dark:bg-slate-900 dark:border-slate-800">
           <button
-            className="md:hidden p-1"
+            className="md:hidden p-1 text-gray-700 dark:text-slate-200"
             onClick={() => setSidebarOpen(!sidebarOpen)}
           >
             {sidebarOpen ? (
@@ -111,13 +124,28 @@ export default function Layout() {
               <HiOutlineMenu className="w-6 h-6" />
             )}
           </button>
-          <h2 className="text-lg font-semibold text-gray-800">
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-slate-100">
             Smart Campus Entry Monitoring System
           </h2>
+          <div className="ml-auto">
+            <button
+              type="button"
+              onClick={() => setDarkMode((current) => !current)}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+              title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {darkMode ? (
+                <HiOutlineSun className="w-5 h-5" />
+              ) : (
+                <HiOutlineMoon className="w-5 h-5" />
+              )}
+              {darkMode ? 'Light Mode' : 'Dark Mode'}
+            </button>
+          </div>
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50 dark:bg-slate-950">
           <Outlet />
         </main>
       </div>

@@ -279,7 +279,7 @@ export default function Settings() {
           <p><span className="font-medium">Version:</span> 1.0.0</p>
           <p><span className="font-medium">Curfew Hour:</span> 22:00 (configurable via CURFEW_HOUR env)</p>
           <p><span className="font-medium">Notifications:</span> Email (Nodemailer) + SMS (Fast2SMS)</p>
-          <p><span className="font-medium">Scanner:</span> ZXing barcode reader via webcam</p>
+          <p><span className="font-medium">Scanner:</span> html5-qrcode barcode reader via webcam</p>
         </div>
       </div>
     </div>
