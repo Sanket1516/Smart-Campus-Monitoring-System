@@ -115,6 +115,24 @@ export default function Scanner() {
     }
   }, []);
 
+  useEffect(() => {
+    void unlockAudio();
+
+    const tryUnlock = () => {
+      void unlockAudio();
+    };
+
+    window.addEventListener('pointerdown', tryUnlock, { passive: true });
+    window.addEventListener('keydown', tryUnlock);
+    window.addEventListener('touchstart', tryUnlock, { passive: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', tryUnlock);
+      window.removeEventListener('keydown', tryUnlock);
+      window.removeEventListener('touchstart', tryUnlock);
+    };
+  }, [unlockAudio]);
+
   const playSound = useCallback(async (soundKey) => {
     const context = audioContextRef.current;
     const buffer = audioBuffersRef.current[soundKey];
@@ -272,7 +290,7 @@ export default function Scanner() {
         )}
         {!audioReady && (
           <p className="mt-3 text-center text-xs text-amber-600">
-            Tap Start once to enable entry, exit, and unauthorized scan sounds.
+            Sound is preparing. If your browser blocks autoplay, your first tap anywhere will enable it.
           </p>
         )}
 
