@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import BarcodeScanner from '../components/BarcodeScanner';
 import OcrScanner from '../components/OcrScanner';
 import { createVisitorEntryApi, getVisitorEntriesApi, processScanApi } from '../services/api';
@@ -13,6 +13,9 @@ import {
   HiOutlineClock,
 } from 'react-icons/hi';
 import { getCategoryLabel } from '../utils/studentOptions';
+import entryBeepUrl from '../assets/entry-single-beep.wav';
+import exitBeepUrl from '../assets/exit-double-beep.wav';
+import unauthorizedWarningUrl from '../assets/unauthorized-access-warning.wav';
 
 const createInitialVisitorForm = () => ({
   visitorName: '',
@@ -24,6 +27,12 @@ const createInitialVisitorForm = () => ({
   remarks: '',
 });
 
+const AUDIO_FILES = {
+  entry: entryBeepUrl,
+  exit: exitBeepUrl,
+  unauthorized: unauthorizedWarningUrl,
+};
+
 export default function Scanner() {
   const [scanning, setScanning] = useState(true);
   const [mode, setMode] = useState('barcode'); // barcode | ocr
@@ -33,6 +42,9 @@ export default function Scanner() {
   const [visitorForm, setVisitorForm] = useState(createInitialVisitorForm);
   const [addingVisitor, setAddingVisitor] = useState(false);
   const [recentVisitors, setRecentVisitors] = useState([]);
+  const [audioReady, setAudioReady] = useState(false);
+  const audioContextRef = useRef(null);
+  const audioBuffersRef = useRef({});
 
   const loadVisitors = useCallback(async () => {
     try {
@@ -47,6 +59,90 @@ export default function Scanner() {
     loadVisitors();
   }, [loadVisitors]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAudioBuffers = async () => {
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+          console.warn('Web Audio API is not supported in this browser.');
+          return;
+        }
+
+        const context = new AudioContextClass();
+        audioContextRef.current = context;
+
+        const entries = await Promise.all(
+          Object.entries(AUDIO_FILES).map(async ([key, url]) => {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = await context.decodeAudioData(arrayBuffer.slice(0));
+            return [key, buffer];
+          })
+        );
+
+        if (!cancelled) {
+          audioBuffersRef.current = Object.fromEntries(entries);
+        }
+      } catch (err) {
+        console.error('Audio buffer load failed:', err);
+      }
+    };
+
+    void loadAudioBuffers();
+
+    return () => {
+      cancelled = true;
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+    };
+  }, []);
+
+  const unlockAudio = useCallback(async () => {
+    const context = audioContextRef.current;
+    if (!context) return;
+
+    try {
+      if (context.state === 'suspended') {
+        await context.resume();
+      }
+      setAudioReady(true);
+    } catch (err) {
+      console.warn('Audio unlock failed:', err);
+    }
+  }, []);
+
+  const playSound = useCallback(async (soundKey) => {
+    const context = audioContextRef.current;
+    const buffer = audioBuffersRef.current[soundKey];
+    if (!context || !buffer) return;
+
+    try {
+      if (context.state === 'suspended') {
+        await context.resume();
+      }
+
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(context.destination);
+      source.start(0);
+      setAudioReady(true);
+    } catch (err) {
+      console.error('Sound playback failed:', err);
+    }
+  }, []);
+
+  const enableScannerAudio = useCallback(async (nextMode = null) => {
+    await unlockAudio();
+    if (nextMode) {
+      setMode(nextMode);
+    }
+    setScanning(true);
+  }, [unlockAudio]);
+
   const handleScan = useCallback(
     async (sapId) => {
       if (processing) return;
@@ -57,12 +153,15 @@ export default function Scanner() {
         setLastScan(res.data);
 
         if (res.data.authorized) {
-          const action = res.data.action === 'entry' ? 'ENTRY recorded' : 'EXIT recorded';
-          toast.success(`${res.data.student.name} — ${action}`);
+          const isEntry = res.data.action === 'entry';
+          const action = isEntry ? 'ENTRY recorded' : 'EXIT recorded';
+          await playSound(isEntry ? 'entry' : 'exit');
+          toast.success(`${res.data.student.name} - ${action}`);
         }
       } catch (err) {
         if (err.response?.status === 404) {
           setLastScan(err.response.data);
+          await playSound('unauthorized');
           toast.error('UNAUTHORIZED ID scanned!');
         } else {
           toast.error('Scan failed: ' + (err.response?.data?.message || err.message));
@@ -71,7 +170,7 @@ export default function Scanner() {
         setTimeout(() => setProcessing(false), 2000);
       }
     },
-    [processing]
+    [playSound, processing]
   );
 
   const handleManualSubmit = (e) => {
@@ -110,10 +209,11 @@ export default function Scanner() {
           <p className="text-gray-500">Scan student ID card barcode or printed number</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Mode toggle */}
           <div className="flex bg-gray-100 rounded-lg p-1">
             <button
-              onClick={() => { setMode('barcode'); setScanning(true); }}
+              onClick={() => {
+                void enableScannerAudio('barcode');
+              }}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 mode === 'barcode' ? 'bg-white shadow text-primary-700' : 'text-gray-600'
               }`}
@@ -121,7 +221,9 @@ export default function Scanner() {
               Barcode
             </button>
             <button
-              onClick={() => { setMode('ocr'); setScanning(true); }}
+              onClick={() => {
+                void enableScannerAudio('ocr');
+              }}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 mode === 'ocr' ? 'bg-white shadow text-yellow-700' : 'text-gray-600'
               }`}
@@ -131,7 +233,13 @@ export default function Scanner() {
           </div>
 
           <button
-            onClick={() => setScanning(!scanning)}
+            onClick={() => {
+              if (!scanning) {
+                void enableScannerAudio();
+                return;
+              }
+              setScanning(false);
+            }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
               scanning
                 ? 'bg-red-100 text-red-700 hover:bg-red-200'
@@ -151,7 +259,6 @@ export default function Scanner() {
         </div>
       </div>
 
-      {/* Scanner area */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         {mode === 'barcode' ? (
           <BarcodeScanner onScan={handleScan} enabled={scanning} />
@@ -163,15 +270,20 @@ export default function Scanner() {
             Processing scan...
           </div>
         )}
+        {!audioReady && (
+          <p className="mt-3 text-center text-xs text-amber-600">
+            Tap Start once to enable entry, exit, and unauthorized scan sounds.
+          </p>
+        )}
 
         {mode === 'ocr' && (
           <p className="mt-3 text-sm text-gray-500 text-center">
-            Point the camera at the teal strip with the SAP ID — auto-scans every 2s, or click the button
+            Point the camera at the teal strip with the SAP ID - auto-scans every 2s, or click
+            the button
           </p>
         )}
       </div>
 
-      {/* Manual Input */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         <h3 className="font-medium text-gray-700 mb-3">Manual Entry</h3>
         <form onSubmit={handleManualSubmit} className="flex gap-3">
@@ -318,8 +430,14 @@ export default function Scanner() {
                     </span>
                   </div>
                   <div className="mt-3 space-y-1 text-gray-600">
-                    <p><span className="font-medium text-gray-700">Meeting:</span> {visitor.personToMeet}</p>
-                    <p><span className="font-medium text-gray-700">Reason:</span> {visitor.meetingReason}</p>
+                    <p>
+                      <span className="font-medium text-gray-700">Meeting:</span>{' '}
+                      {visitor.personToMeet}
+                    </p>
+                    <p>
+                      <span className="font-medium text-gray-700">Reason:</span>{' '}
+                      {visitor.meetingReason}
+                    </p>
                     {visitor.organization && (
                       <p className="flex items-center gap-1">
                         <HiOutlineOfficeBuilding className="w-4 h-4" />
@@ -327,7 +445,9 @@ export default function Scanner() {
                       </p>
                     )}
                     {visitor.idProof && (
-                      <p><span className="font-medium text-gray-700">ID:</span> {visitor.idProof}</p>
+                      <p>
+                        <span className="font-medium text-gray-700">ID:</span> {visitor.idProof}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -337,13 +457,10 @@ export default function Scanner() {
         </div>
       </div>
 
-      {/* Scan Result */}
       {lastScan && (
         <div
           className={`rounded-xl shadow-sm border-2 p-6 ${
-            lastScan.authorized
-              ? 'bg-green-50 border-green-300'
-              : 'bg-red-50 border-red-300'
+            lastScan.authorized ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'
           }`}
         >
           {lastScan.authorized ? (
@@ -351,9 +468,7 @@ export default function Scanner() {
               <HiOutlineCheckCircle className="w-12 h-12 text-green-600 flex-shrink-0" />
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
-                  <h3 className="text-xl font-bold text-green-800">
-                    {lastScan.student.name}
-                  </h3>
+                  <h3 className="text-xl font-bold text-green-800">{lastScan.student.name}</h3>
                   <span
                     className={`px-3 py-1 rounded-full text-sm font-medium ${
                       lastScan.action === 'entry'
@@ -365,15 +480,30 @@ export default function Scanner() {
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm text-green-700">
-                  <p><span className="font-medium">SAP ID:</span> {lastScan.student.sapId}</p>
-                  <p><span className="font-medium">Category:</span> {getCategoryLabel(lastScan.student.category)}</p>
-                  <p><span className="font-medium">Department:</span> {lastScan.student.department}</p>
-                  <p><span className="font-medium">Year:</span> {lastScan.student.year}</p>
+                  <p>
+                    <span className="font-medium">SAP ID:</span> {lastScan.student.sapId}
+                  </p>
+                  <p>
+                    <span className="font-medium">Category:</span>{' '}
+                    {getCategoryLabel(lastScan.student.category)}
+                  </p>
+                  <p>
+                    <span className="font-medium">Department:</span> {lastScan.student.department}
+                  </p>
+                  <p>
+                    <span className="font-medium">Year:</span> {lastScan.student.year}
+                  </p>
                   {lastScan.log.entryTime && (
-                    <p><span className="font-medium">Entry:</span> {new Date(lastScan.log.entryTime).toLocaleTimeString()}</p>
+                    <p>
+                      <span className="font-medium">Entry:</span>{' '}
+                      {new Date(lastScan.log.entryTime).toLocaleTimeString()}
+                    </p>
                   )}
                   {lastScan.log.exitTime && (
-                    <p><span className="font-medium">Exit:</span> {new Date(lastScan.log.exitTime).toLocaleTimeString()}</p>
+                    <p>
+                      <span className="font-medium">Exit:</span>{' '}
+                      {new Date(lastScan.log.exitTime).toLocaleTimeString()}
+                    </p>
                   )}
                 </div>
                 {lastScan.log.lateReturn && (

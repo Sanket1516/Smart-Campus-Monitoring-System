@@ -47,7 +47,7 @@ export const resolveUnauthorizedApi = (id, notes) =>
   api.put(`/logs/unauthorized/${id}/resolve`, { notes });
 
 // Dashboard
-export const getDashboardApi = () => api.get('/dashboard');
+export const getDashboardApi = (date) => api.get('/dashboard', { params: date ? { date } : {} });
 export const getHourlyApi = (date) => api.get('/dashboard/hourly', { params: { date } });
 export const getHostellerStatusApi = () => api.get('/dashboard/hostellers');
 

@@ -1,4 +1,12 @@
-export default function StatCard({ title, value, subtitle, icon: Icon, color = 'blue' }) {
+export default function StatCard({
+  title,
+  value,
+  subtitle,
+  icon: Icon,
+  color = 'blue',
+  onClick,
+  active = false,
+}) {
   const colors = {
     blue: 'bg-blue-50 text-blue-700 border-blue-200',
     green: 'bg-green-50 text-green-700 border-green-200',
@@ -17,13 +25,22 @@ export default function StatCard({ title, value, subtitle, icon: Icon, color = '
     indigo: 'bg-indigo-100 text-indigo-600',
   };
 
+  const Component = onClick ? 'button' : 'div';
+
   return (
-    <div className={`rounded-xl border p-5 ${colors[color]}`}>
+    <Component
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`rounded-xl border p-5 text-left transition-all ${colors[color]} ${
+        onClick ? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md' : ''
+      } ${active ? 'ring-2 ring-offset-2 ring-primary-400' : ''}`}
+    >
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium opacity-80">{title}</p>
           <p className="text-3xl font-bold mt-1">{value}</p>
           {subtitle && <p className="text-sm mt-1 opacity-70">{subtitle}</p>}
+          {onClick && <p className="text-xs mt-2 opacity-70">Click to view students</p>}
         </div>
         {Icon && (
           <div className={`p-3 rounded-lg ${iconColors[color]}`}>
@@ -31,6 +48,6 @@ export default function StatCard({ title, value, subtitle, icon: Icon, color = '
           </div>
         )}
       </div>
-    </div>
+    </Component>
   );
 }

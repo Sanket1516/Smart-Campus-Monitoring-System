@@ -15,6 +15,14 @@ import {
 } from 'chart.js';
 import { Bar, Line, Doughnut } from 'react-chartjs-2';
 
+const getLocalDateInputValue = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement, PointElement,
   ArcElement, Title, Tooltip, Legend, Filler
@@ -23,7 +31,7 @@ ChartJS.register(
 export default function Analytics() {
   const [stats, setStats] = useState(null);
   const [hourly, setHourly] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(getLocalDateInputValue());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,7 +39,7 @@ export default function Analytics() {
       setLoading(true);
       try {
         const [dashRes, hourlyRes] = await Promise.all([
-          getDashboardApi(),
+          getDashboardApi(selectedDate),
           getHourlyApi(selectedDate),
         ]);
         setStats(dashRes.data);
@@ -55,12 +63,16 @@ export default function Analytics() {
 
   if (!stats) return <p className="text-gray-500">Failed to load analytics.</p>;
 
+  const dayScholarCount = Number(stats.totalDayScholars) || 0;
+  const hostellerCount = Number(stats.totalHostellers) || 0;
+  const totalStudents = Number(stats.totalStudents) || 0;
+
   // Category breakdown doughnut
   const categoryData = {
     labels: ['Day Scholars', 'Hostellers'],
     datasets: [
       {
-        data: [stats.totalDayScholars, stats.totalHostellers],
+        data: [dayScholarCount, hostellerCount],
         backgroundColor: ['rgba(59, 130, 246, 0.8)', 'rgba(139, 92, 246, 0.8)'],
         borderWidth: 0,
       },
@@ -162,12 +174,34 @@ export default function Analytics() {
               data={categoryData}
               options={{
                 responsive: true,
-                plugins: { legend: { position: 'bottom' } },
+                plugins: {
+                  legend: { position: 'bottom' },
+                  tooltip: {
+                    callbacks: {
+                      label(context) {
+                        const label = context.label || '';
+                        const value = Number(context.raw) || 0;
+                        const percent = totalStudents > 0
+                          ? Math.round((value / totalStudents) * 100)
+                          : 0;
+                        return `${label}: ${value} students (${percent}%)`;
+                      },
+                    },
+                  },
+                },
               }}
             />
           </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-lg bg-blue-50 px-3 py-2 text-blue-700">
+              Day Scholars: <span className="font-semibold">{dayScholarCount}</span>
+            </div>
+            <div className="rounded-lg bg-violet-50 px-3 py-2 text-violet-700">
+              Hostellers: <span className="font-semibold">{hostellerCount}</span>
+            </div>
+          </div>
           <div className="mt-4 text-center text-sm text-gray-600">
-            Total: {stats.totalStudents} students
+            Total: {totalStudents} students
           </div>
         </div>
 
