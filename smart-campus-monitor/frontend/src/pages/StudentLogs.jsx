@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
-import { getLogsApi, getUnauthorizedLogsApi } from '../services/api';
-import { HiOutlineSearch, HiOutlineFilter, HiOutlineExclamationCircle } from 'react-icons/hi';
+import {
+  getLogsApi,
+  getUnauthorizedLogsApi,
+  getVisitorEntriesApi,
+} from '../services/api';
+import {
+  HiOutlineSearch,
+  HiOutlineFilter,
+  HiOutlineExclamationCircle,
+  HiOutlineUserAdd,
+} from 'react-icons/hi';
 import {
   CATEGORY_OPTIONS,
   getCategoryLabel,
@@ -9,10 +18,11 @@ import {
 
 export default function StudentLogs() {
   const [logs, setLogs] = useState([]);
+  const [visitorLogs, setVisitorLogs] = useState([]);
   const [unauthorizedLogs, setUnauthorizedLogs] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('entry'); // entry | unauthorized
+  const [tab, setTab] = useState('entry'); // entry | visitors | unauthorized
   const [filters, setFilters] = useState({
     date: new Date().toISOString().split('T')[0],
     sapId: '',
@@ -35,9 +45,14 @@ export default function StudentLogs() {
           const res = await getLogsApi(params);
           setLogs(res.data.logs);
           setTotal(res.data.total);
+        } else if (tab === 'visitors') {
+          const res = await getVisitorEntriesApi({ date: filters.date, page: filters.page, limit: 50 });
+          setVisitorLogs(res.data.visitors || []);
+          setTotal(res.data.total || 0);
         } else {
           const res = await getUnauthorizedLogsApi({ date: filters.date });
           setUnauthorizedLogs(res.data.logs);
+          setTotal(res.data.total || 0);
         }
       } catch (err) {
         console.error('Logs load error:', err);
@@ -67,6 +82,15 @@ export default function StudentLogs() {
             Entry Logs
           </button>
           <button
+            onClick={() => setTab('visitors')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${
+              tab === 'visitors' ? 'bg-white shadow text-blue-700' : 'text-gray-600'
+            }`}
+          >
+            <HiOutlineUserAdd className="w-4 h-4" />
+            Visitors
+          </button>
+          <button
             onClick={() => setTab('unauthorized')}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${
               tab === 'unauthorized' ? 'bg-white shadow text-red-700' : 'text-gray-600'
@@ -93,7 +117,7 @@ export default function StudentLogs() {
           />
           {tab === 'entry' && (
             <>
-              <div className="relative">
+              <div className="relative sm:col-span-1">
                 <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
@@ -214,6 +238,73 @@ export default function StudentLogs() {
                   <button
                     onClick={() => setFilters({ ...filters, page: filters.page + 1 })}
                     disabled={logs.length < 50}
+                    className="px-3 py-1 border rounded disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        ) : tab === 'visitors' ? (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-blue-50 text-blue-700">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-medium">Visitor</th>
+                    <th className="text-left px-4 py-3 font-medium">Phone</th>
+                    <th className="text-left px-4 py-3 font-medium">Person To Meet</th>
+                    <th className="text-left px-4 py-3 font-medium">Reason</th>
+                    <th className="text-left px-4 py-3 font-medium">Check In</th>
+                    <th className="text-left px-4 py-3 font-medium">Entered By</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {visitorLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-center py-8 text-gray-400">
+                        No visitor logs found
+                      </td>
+                    </tr>
+                  ) : (
+                    visitorLogs.map((visitor) => (
+                      <tr key={visitor._id} className="hover:bg-blue-50/40">
+                        <td className="px-4 py-3 font-medium text-gray-800">{visitor.visitorName}</td>
+                        <td className="px-4 py-3">{visitor.phoneNumber}</td>
+                        <td className="px-4 py-3">{visitor.personToMeet}</td>
+                        <td className="px-4 py-3">
+                          <div className="text-gray-700">{visitor.meetingReason}</div>
+                          {visitor.organization && (
+                            <div className="text-xs text-gray-500 mt-1">{visitor.organization}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {visitor.checkInTime
+                            ? new Date(visitor.checkInTime).toLocaleTimeString()
+                            : '-'}
+                        </td>
+                        <td className="px-4 py-3">{visitor.enteredBy || '-'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {total > 50 && (
+              <div className="px-4 py-3 border-t border-gray-100 flex justify-between items-center text-sm">
+                <span className="text-gray-500">Showing {visitorLogs.length} of {total}</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setFilters({ ...filters, page: filters.page - 1 })}
+                    disabled={filters.page <= 1}
+                    className="px-3 py-1 border rounded disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setFilters({ ...filters, page: filters.page + 1 })}
+                    disabled={visitorLogs.length < 50}
                     className="px-3 py-1 border rounded disabled:opacity-40"
                   >
                     Next

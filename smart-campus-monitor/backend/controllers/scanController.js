@@ -35,8 +35,8 @@ exports.processScan = async (req, res) => {
     const today = todayStr();
     const now = new Date();
 
-    // Find today's log for this student
-    let log = await EntryLog.findOne({ sapId, date: today });
+    // Use the latest log for today so repeated entry/exit cycles toggle correctly.
+    let log = await EntryLog.findOne({ sapId, date: today }).sort({ createdAt: -1 });
 
     let action;
 
