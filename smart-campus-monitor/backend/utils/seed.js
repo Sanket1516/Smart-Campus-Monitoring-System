@@ -29,6 +29,7 @@ const students = [
 
 const admins = [
   { username: 'admin', password: 'admin123', name: 'System Admin', role: 'admin' },
+  { username: 'warden1', password: 'warden123', name: 'Hostel Warden', role: 'warden' },
   { username: 'security1', password: 'security123', name: 'Gate Security', role: 'security' },
 ];
 
@@ -104,6 +105,7 @@ const seed = async () => {
     console.log(`  Unauthorized logs: 2`);
     console.log('\nDefault credentials:');
     console.log('  Admin:    admin / admin123');
+    console.log('  Warden:   warden1 / warden123');
     console.log('  Security: security1 / security123');
 
     process.exit(0);
