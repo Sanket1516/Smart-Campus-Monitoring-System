@@ -3,6 +3,7 @@ const EntryLog = require('../models/EntryLog');
 const UnauthorizedLog = require('../models/UnauthorizedLog');
 const { notifyParent } = require('../services/notification');
 const { isHosteller } = require('../utils/studentMeta');
+const { isPastCurfew } = require('../services/configService');
 
 // Helper: get today's date string
 const todayStr = () => new Date().toISOString().split('T')[0];
@@ -16,7 +17,7 @@ exports.processScan = async (req, res) => {
       return res.status(400).json({ message: 'SAP ID is required' });
     }
 
-    const student = await Student.findOne({ sapId, isActive: true });
+    const student = await Student.findOne({ sapId, isActive: true }).select('+hostel');
 
     // Unauthorized scan
     if (!student) {
@@ -58,8 +59,7 @@ exports.processScan = async (req, res) => {
 
       // Check late return for hostellers
       if (isHosteller(student.category)) {
-        const curfewHour = Number(process.env.CURFEW_HOUR) || 22;
-        if (now.getHours() >= curfewHour) {
+        if (await isPastCurfew(now, student.hostel)) {
           log.lateReturn = true;
         }
       }

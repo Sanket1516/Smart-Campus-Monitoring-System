@@ -2,6 +2,8 @@ const Hostel = require('../models/Hostel');
 const Student = require('../models/Student');
 const HostellerRequest = require('../models/HostellerRequest');
 const Admin = require('../models/Admin');
+const { emitHostelWardenChanged } = require('../services/socketService');
+const { createAuditLog } = require('../services/auditService');
 
 const getOccupancy = (studentCount, capacity) => {
   const safeCapacity = Number(capacity) || 0;
@@ -83,6 +85,16 @@ exports.createHostel = async (req, res) => {
       .populate('warden', 'name username email phone role isActive')
       .populate('createdBy', 'name username role');
 
+    await createAuditLog({
+      admin: req.admin,
+      action: `Created hostel ${hostel.name}`,
+      entity: 'Hostel',
+      entityId: hostel._id,
+      oldValue: null,
+      newValue: populatedHostel.toObject(),
+      ipAddress: req.ip,
+    });
+
     res.status(201).json({ hostel: await enrichHostel(populatedHostel) });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -135,13 +147,23 @@ exports.updateHostel = async (req, res) => {
         }
       );
 
-      console.log('hostel:warden_changed', {
+      emitHostelWardenChanged({
         hostelName: updatedHostel.name,
         hostelId: String(updatedHostel._id),
         oldWarden: previousWardenId,
         newWarden: nextWardenId,
       });
     }
+
+    await createAuditLog({
+      admin: req.admin,
+      action: `Updated hostel ${updatedHostel.name}`,
+      entity: 'Hostel',
+      entityId: updatedHostel._id,
+      oldValue: existingHostel.toObject(),
+      newValue: updatedHostel.toObject(),
+      ipAddress: req.ip,
+    });
 
     res.json({ hostel: await enrichHostel(updatedHostel) });
   } catch (err) {
@@ -169,8 +191,19 @@ exports.deleteHostel = async (req, res) => {
       });
     }
 
+    const previousState = hostel.toObject();
     hostel.isActive = false;
     await hostel.save();
+
+    await createAuditLog({
+      admin: req.admin,
+      action: `Deactivated hostel ${hostel.name}`,
+      entity: 'Hostel',
+      entityId: hostel._id,
+      oldValue: previousState,
+      newValue: hostel.toObject(),
+      ipAddress: req.ip,
+    });
 
     res.json({ message: 'Hostel deactivated successfully' });
   } catch (err) {

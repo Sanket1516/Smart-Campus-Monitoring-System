@@ -16,6 +16,7 @@ const startTerminalOfflineMonitor = () => {
       const offlineTerminals = await TerminalConfig.find({
         isOnline: true,
         lastSeen: { $lt: offlineThreshold },
+        isEnrollmentStation: false,
       }).lean();
 
       if (!offlineTerminals.length) {

@@ -58,6 +58,10 @@ export const resolveUnauthorizedApi = (id, notes) =>
 export const getDashboardApi = (params) => api.get('/dashboard', { params });
 export const getHourlyApi = (params) => api.get('/dashboard/hourly', { params });
 export const getHostellerStatusApi = () => api.get('/dashboard/hostellers');
+export const getSettingApi = (key) => api.get(`/settings/${key}`);
+export const updateSettingApi = (key, value) => api.put(`/settings/${key}`, { value });
+export const getAuditLogsApi = (params) => api.get('/settings/audit', { params });
+export const sendSettingsTestEmailApi = (data) => api.post('/settings/test-email', data);
 
 // Notify
 export const sendNotifyApi = (data) => api.post('/notify', data);

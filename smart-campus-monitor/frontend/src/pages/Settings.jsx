@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
+  HiOutlineAcademicCap,
+  HiOutlineBell,
+  HiOutlineChip,
+  HiOutlineClipboardList,
+  HiOutlineCloud,
   HiOutlineCog,
   HiOutlineHome,
   HiOutlinePencilAlt,
@@ -11,20 +16,39 @@ import {
 } from 'react-icons/hi';
 import {
   createHostelApi,
+  createTerminalApi,
   deactivateStaffApi,
   deleteHostelApi,
+  deleteTerminalApi,
+  getAuditLogsApi,
   getHostelStudentsApi,
   getHostelsApi,
+  getSettingApi,
   getStaffApi,
+  getTerminalStatusApi,
+  getTerminalsApi,
   registerStaffApi,
+  sendSettingsTestEmailApi,
+  updateSettingApi,
   updateHostelApi,
   updateStaffApi,
+  updateTerminalApi,
 } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import SettingsTerminalsTab from '../components/settings/SettingsTerminalsTab';
+import SettingsNotificationsTab from '../components/settings/SettingsNotificationsTab';
+import SettingsAcademicTab from '../components/settings/SettingsAcademicTab';
+import SettingsSystemTab from '../components/settings/SettingsSystemTab';
+import SettingsAuditTab from '../components/settings/SettingsAuditTab';
 
 const tabs = [
   { id: 'hostels', label: 'Hostel Management', icon: HiOutlineHome },
   { id: 'staff', label: 'Staff Management', icon: HiOutlineUserGroup },
+  { id: 'terminals', label: 'Gate & Terminal Management', icon: HiOutlineChip },
+  { id: 'notifications', label: 'Notification Settings', icon: HiOutlineBell },
+  { id: 'academic', label: 'Academic Settings', icon: HiOutlineAcademicCap },
+  { id: 'system', label: 'System Configuration', icon: HiOutlineCloud },
+  { id: 'audit', label: 'Audit Log', icon: HiOutlineClipboardList },
 ];
 
 const emptyHostel = {
@@ -48,6 +72,46 @@ const emptyStaff = {
   role: 'warden',
 };
 
+const emptyTerminal = {
+  machineNumber: '',
+  deviceSN: '',
+  deviceName: '',
+  gateName: '',
+  terminalLabel: '',
+  location: '',
+  terminalIP: '',
+};
+
+const defaultNotificationSettings = {
+  emailOnEntry: true,
+  emailOnExit: true,
+  emailOnUnauthorized: false,
+  emailOnLateReturn: true,
+  curfewByHostel: {},
+  defaultCurfewTime: '22:00',
+  gracePeriodMinutes: 30,
+  emailSenderName: 'Smart Campus Monitoring System',
+};
+
+const defaultAcademicSettings = {
+  academicYear: '',
+  departments: [],
+  semesterStartDate: '',
+  semesterEndDate: '',
+  holidayCalendar: [],
+  sapIdFormatRule: '',
+};
+
+const defaultSystemConfiguration = {
+  collegeName: 'Smart Campus Monitoring System',
+  collegeLogo: '',
+  cloudflareUrl: '',
+  timezone: 'Asia/Kolkata',
+  dataRetentionMonths: 12,
+  maintenanceMode: false,
+  maintenanceMessage: '',
+};
+
 const fmt = (value) =>
   value
     ? new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
@@ -68,13 +132,24 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [hostelForm, setHostelForm] = useState(emptyHostel);
   const [staffForm, setStaffForm] = useState(emptyStaff);
+  const [terminalForm, setTerminalForm] = useState(emptyTerminal);
   const [editingHostel, setEditingHostel] = useState(null);
   const [editingStaff, setEditingStaff] = useState(null);
+  const [editingTerminal, setEditingTerminal] = useState(null);
   const [showHostelForm, setShowHostelForm] = useState(false);
   const [showStaffForm, setShowStaffForm] = useState(false);
+  const [showTerminalForm, setShowTerminalForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [studentPanel, setStudentPanel] = useState(null);
   const [loadingStudents, setLoadingStudents] = useState(false);
+  const [terminals, setTerminals] = useState([]);
+  const [terminalSummary, setTerminalSummary] = useState(null);
+  const [notificationSettings, setNotificationSettings] = useState(defaultNotificationSettings);
+  const [academicSettings, setAcademicSettings] = useState(defaultAcademicSettings);
+  const [systemConfiguration, setSystemConfiguration] = useState(defaultSystemConfiguration);
+  const [testEmailRecipient, setTestEmailRecipient] = useState('');
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditAdmins, setAuditAdmins] = useState([]);
 
   const wardens = useMemo(
     () => staff.filter((member) => member.role === 'warden' && member.isActive),
@@ -94,9 +169,44 @@ export default function Settings() {
   const load = async () => {
     setLoading(true);
     try {
-      const [hostelRes, staffRes] = await Promise.all([getHostelsApi(), getStaffApi()]);
+      const [
+        hostelRes,
+        staffRes,
+        terminalsRes,
+        terminalStatusRes,
+        notificationRes,
+        academicRes,
+        systemRes,
+        auditRes,
+      ] = await Promise.all([
+        getHostelsApi(),
+        getStaffApi(),
+        getTerminalsApi(),
+        getTerminalStatusApi(),
+        getSettingApi('notification_settings'),
+        getSettingApi('academic_settings'),
+        getSettingApi('system_configuration'),
+        getAuditLogsApi(),
+      ]);
       setHostels(hostelRes.data.hostels || []);
       setStaff(staffRes.data.staff || []);
+      setTerminals(terminalsRes.data.terminals || []);
+      setTerminalSummary(terminalStatusRes.data.summary || null);
+      setNotificationSettings({
+        ...defaultNotificationSettings,
+        ...(notificationRes.data.value || {}),
+      });
+      setAcademicSettings({
+        ...defaultAcademicSettings,
+        ...(academicRes.data.value || {}),
+      });
+      setSystemConfiguration({
+        ...defaultSystemConfiguration,
+        ...(systemRes.data.value || {}),
+      });
+      setAuditLogs(auditRes.data.logs || []);
+      setAuditAdmins(auditRes.data.admins || []);
+      setTestEmailRecipient(admin?.email || '');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to load settings');
     } finally {
@@ -118,6 +228,12 @@ export default function Settings() {
     setStaffForm(emptyStaff);
     setEditingStaff(null);
     setShowStaffForm(false);
+  };
+
+  const resetTerminalForm = () => {
+    setTerminalForm(emptyTerminal);
+    setEditingTerminal(null);
+    setShowTerminalForm(false);
   };
 
   const saveHostel = async (e) => {
@@ -163,6 +279,84 @@ export default function Settings() {
       toast.error(err.response?.data?.message || 'Failed to save staff');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveTerminal = async (payload, existingMachineNumber = null) => {
+    setSaving(true);
+    try {
+      if (existingMachineNumber !== null) {
+        await updateTerminalApi(existingMachineNumber, payload);
+        toast.success('Terminal updated');
+      } else {
+        await createTerminalApi(payload);
+        toast.success('Terminal created');
+      }
+      resetTerminalForm();
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save terminal');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveSettings = async (key, value, successMessage) => {
+    setSaving(true);
+    try {
+      await updateSettingApi(key, value);
+      toast.success(successMessage);
+      await load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const sendTestEmail = async () => {
+    try {
+      await sendSettingsTestEmailApi({ to: testEmailRecipient });
+      toast.success('Test email sent');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to send test email');
+    }
+  };
+
+  const loadAudit = async (filters = {}) => {
+    try {
+      const params = Object.fromEntries(
+        Object.entries(filters).filter(([, value]) => value !== '' && value !== null && value !== undefined)
+      );
+      const res = await getAuditLogsApi(params);
+      setAuditLogs(res.data.logs || []);
+      setAuditAdmins(res.data.admins || []);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to load audit logs');
+    }
+  };
+
+  const exportAuditCsv = (filters = {}) => {
+    const header = ['Timestamp', 'Admin', 'Action', 'Entity', 'Entity ID', 'IP Address'];
+    const rows = auditLogs.map((log) => [
+      log.timestamp,
+      log.admin?.name || log.admin?.username || 'System',
+      log.action,
+      log.entity,
+      log.entityId || '',
+      log.ipAddress || '',
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    if (Object.keys(filters).length) {
+      loadAudit(filters);
     }
   };
 
@@ -215,6 +409,17 @@ export default function Settings() {
       load();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to deactivate staff');
+    }
+  };
+
+  const deleteTerminal = async (terminal) => {
+    if (!window.confirm(`Delete ${terminal.terminalLabel}?`)) return;
+    try {
+      await deleteTerminalApi(terminal.machineNumber);
+      toast.success('Terminal deleted');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete terminal');
     }
   };
 
@@ -484,6 +689,67 @@ export default function Settings() {
             {staff.length === 0 && <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center text-gray-500 xl:col-span-2">No staff accounts found.</div>}
           </div>
         </div>
+      )}
+
+      {tab === 'terminals' && (
+        <SettingsTerminalsTab
+          terminals={terminals}
+          summary={terminalSummary}
+          form={terminalForm}
+          setForm={setTerminalForm}
+          showForm={showTerminalForm}
+          setShowForm={setShowTerminalForm}
+          editingTerminal={editingTerminal}
+          setEditingTerminal={setEditingTerminal}
+          saving={saving}
+          onSave={saveTerminal}
+          onDelete={deleteTerminal}
+          onReset={resetTerminalForm}
+        />
+      )}
+
+      {tab === 'notifications' && (
+        <SettingsNotificationsTab
+          hostels={hostels}
+          settings={notificationSettings}
+          setSettings={setNotificationSettings}
+          testEmailRecipient={testEmailRecipient}
+          setTestEmailRecipient={setTestEmailRecipient}
+          saving={saving}
+          onSave={() =>
+            saveSettings('notification_settings', notificationSettings, 'Notification settings saved')
+          }
+          onSendTestEmail={sendTestEmail}
+        />
+      )}
+
+      {tab === 'academic' && (
+        <SettingsAcademicTab
+          settings={academicSettings}
+          setSettings={setAcademicSettings}
+          saving={saving}
+          onSave={() => saveSettings('academic_settings', academicSettings, 'Academic settings saved')}
+        />
+      )}
+
+      {tab === 'system' && (
+        <SettingsSystemTab
+          settings={systemConfiguration}
+          setSettings={setSystemConfiguration}
+          saving={saving}
+          onSave={() =>
+            saveSettings('system_configuration', systemConfiguration, 'System configuration saved')
+          }
+        />
+      )}
+
+      {tab === 'audit' && (
+        <SettingsAuditTab
+          logs={auditLogs}
+          admins={auditAdmins}
+          onApplyFilters={loadAudit}
+          onExportCsv={exportAuditCsv}
+        />
       )}
     </div>
   );

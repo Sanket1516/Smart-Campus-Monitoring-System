@@ -7,6 +7,7 @@ const {
   pullTemplateFromDevice,
   syncStudentToAllTerminals,
 } = require('../services/fingerprintService');
+const { createAuditLog } = require('../services/auditService');
 
 const buildKey = () =>
   crypto.createHash('sha256').update(String(process.env.FP_SECRET || 'smart-campus-fp')).digest();
@@ -170,6 +171,22 @@ exports.confirmEnrollment = async (req, res) => {
     const updatedStudent = await sanitizeStudent(studentId);
     const syncResult = await syncStudentToAllTerminals(updatedStudent);
 
+    await createAuditLog({
+      admin: req.admin,
+      action: `Enrolled fingerprint for ${updatedStudent.name} (${updatedStudent.sapId})`,
+      entity: 'Student',
+      entityId: studentId,
+      oldValue: { fingerprintEnrolled: false },
+      newValue: {
+        fingerprintEnrolled: true,
+        zktUserID: Number(zktUserID),
+        studentType: normalizedType,
+        hostel: hostel?._id || null,
+        roomNumber: isHosteller ? roomNumber.trim() : '',
+      },
+      ipAddress: req.ip,
+    });
+
     res.json({
       success: true,
       student: buildEnrollmentSummary(updatedStudent),
@@ -208,6 +225,14 @@ exports.updateEnrollmentType = async (req, res) => {
       }
     }
 
+    const previousState = {
+      studentType: student.studentType,
+      hostel: student.hostel,
+      roomNumber: student.roomNumber,
+      isHosteller: student.isHosteller,
+      wardenApprovalRequired: student.wardenApprovalRequired,
+    };
+
     await Student.findByIdAndUpdate(
       studentId,
       {
@@ -223,6 +248,22 @@ exports.updateEnrollmentType = async (req, res) => {
     );
 
     const updatedStudent = await sanitizeStudent(studentId);
+
+    await createAuditLog({
+      admin: req.admin,
+      action: `Updated student type for ${updatedStudent.name} (${updatedStudent.sapId})`,
+      entity: 'Student',
+      entityId: studentId,
+      oldValue: previousState,
+      newValue: {
+        studentType: normalizedType,
+        hostel: isHosteller ? hostel?._id : null,
+        roomNumber: isHosteller ? roomNumber.trim() : '',
+        isHosteller,
+        wardenApprovalRequired: isHosteller ? Boolean(wardenApprovalRequired) : false,
+      },
+      ipAddress: req.ip,
+    });
 
     res.json({
       success: true,

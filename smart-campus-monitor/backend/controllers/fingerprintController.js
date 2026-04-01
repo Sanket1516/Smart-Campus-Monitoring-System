@@ -15,6 +15,7 @@ const {
   emitUnknownTerminal,
 } = require('../services/socketService');
 const { isHosteller } = require('../utils/studentMeta');
+const { isPastCurfew, getSystemConfiguration } = require('../services/configService');
 
 const formatISTDate = (date = new Date()) =>
   new Intl.DateTimeFormat('en-CA', {
@@ -76,9 +77,7 @@ const processEntryExit = async (student, terminal, now) => {
     log.status = 'exited';
 
     if (isStudentHosteller(student)) {
-      const curfewHour = Number(process.env.CURFEW_HOUR) || 22;
-
-      if (now.getHours() >= curfewHour) {
+      if (await isPastCurfew(now, student.hostel?._id || student.hostel)) {
         log.lateReturn = true;
       }
     }
@@ -115,6 +114,16 @@ exports.processFingerprintScan = async (req, res) => {
     } = req.body;
 
     const now = timestamp ? new Date(timestamp) : new Date();
+
+    // Check maintenance mode first
+    const systemConfig = await getSystemConfiguration();
+    if (systemConfig.maintenanceMode) {
+      return res.json({
+        allow: false,
+        message: systemConfig.maintenanceMessage || 'System is under maintenance',
+      });
+    }
+
     const terminal = await TerminalConfig.findOne({ machineNumber: Number(machineNumber) });
 
     if (!terminal || terminal.deviceSN !== String(deviceSN)) {

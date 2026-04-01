@@ -4,11 +4,13 @@ const Hostel = require('../models/Hostel');
 const AlertLog = require('../models/AlertLog');
 const { sendEmail } = require('../services/notification');
 const { emitWardenLateReturn, emitWardenNewRequest } = require('../services/socketService');
+const { getGracePeriodMinutes, shouldSendLateReturnEmail } = require('../services/configService');
+const { createAuditLog } = require('../services/auditService');
 
-const GRACE_PERIOD_MINUTES = 30;
-
-const buildReturnDeadline = (expectedReturnTime) =>
-  new Date(new Date(expectedReturnTime).getTime() + GRACE_PERIOD_MINUTES * 60 * 1000);
+const buildReturnDeadline = async (expectedReturnTime) => {
+  const gracePeriodMinutes = await getGracePeriodMinutes();
+  return new Date(new Date(expectedReturnTime).getTime() + gracePeriodMinutes * 60 * 1000);
+};
 
 const buildRequestQueryForRole = (admin) => {
   if (admin.role === 'warden') {
@@ -108,6 +110,11 @@ const notifyRequestRejected = async (request) =>
   });
 
 const notifyLateReturn = async (request, minutesLate) => {
+  const shouldSend = await shouldSendLateReturnEmail();
+  if (!shouldSend) {
+    return null;
+  }
+
   const subject = `Late return alert for ${request.student.name}`;
   const html = `
     <div style="font-family: Arial, sans-serif; padding: 20px;">
@@ -248,14 +255,25 @@ exports.approveHostellerRequest = async (req, res) => {
       return res.status(403).json({ message: 'You can only approve requests assigned to you' });
     }
 
+    const previousStatus = request.status;
     request.status = 'approved';
     request.approvedAt = new Date();
     request.rejectedAt = null;
     request.rejectionReason = '';
-    request.accessValidUntil = buildReturnDeadline(request.expectedReturnTime);
+    request.accessValidUntil = await buildReturnDeadline(request.expectedReturnTime);
     await request.save();
 
     await notifyRequestApproved(request);
+
+    await createAuditLog({
+      admin: req.admin,
+      action: `Approved hosteller request for ${request.student.name} (${request.student.sapId})`,
+      entity: 'HostellerRequest',
+      entityId: request._id,
+      oldValue: { status: previousStatus },
+      newValue: { status: 'approved', accessValidUntil: request.accessValidUntil },
+      ipAddress: req.ip,
+    });
 
     res.json({
       success: true,
@@ -283,6 +301,7 @@ exports.rejectHostellerRequest = async (req, res) => {
       return res.status(403).json({ message: 'You can only reject requests assigned to you' });
     }
 
+    const previousStatus = request.status;
     request.status = 'rejected';
     request.rejectedAt = new Date();
     request.approvedAt = null;
@@ -291,6 +310,16 @@ exports.rejectHostellerRequest = async (req, res) => {
     await request.save();
 
     await notifyRequestRejected(request);
+
+    await createAuditLog({
+      admin: req.admin,
+      action: `Rejected hosteller request for ${request.student.name} (${request.student.sapId})`,
+      entity: 'HostellerRequest',
+      entityId: request._id,
+      oldValue: { status: previousStatus },
+      newValue: { status: 'rejected', rejectionReason: rejectionReason.trim() },
+      ipAddress: req.ip,
+    });
 
     res.json({
       success: true,

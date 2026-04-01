@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const { isHosteller } = require('../utils/studentMeta');
+const { getEmailSenderName, shouldSendEntryExitEmail } = require('./configService');
 
 let transporter = null;
 
@@ -24,8 +25,11 @@ const getTransporter = () => {
 const sendEmail = async ({ to, subject, text, html }) => {
   try {
     const transport = getTransporter();
+    const senderName = await getEmailSenderName();
+    const fromAddress = process.env.EMAIL_FROM;
+    const from = senderName && fromAddress ? `"${senderName}" <${fromAddress}>` : fromAddress;
     const info = await transport.sendMail({
-      from: process.env.EMAIL_FROM,
+      from,
       to,
       subject,
       text,
@@ -79,6 +83,14 @@ const sendSMS = async ({ phone, message }) => {
  * Notify parent about student entry/exit
  */
 const notifyParent = async (student, action, timestamp) => {
+  const enabled = await shouldSendEntryExitEmail(action);
+  if (!enabled) {
+    return {
+      email: { success: false, skipped: true, reason: `Email notifications disabled for ${action}` },
+      sms: { success: false, skipped: true, reason: `Email notifications disabled for ${action}` },
+    };
+  }
+
   const time = new Date(timestamp).toLocaleTimeString('en-IN', {
     hour: '2-digit',
     minute: '2-digit',

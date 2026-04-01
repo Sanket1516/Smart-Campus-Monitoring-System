@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
+const { createAuditLog } = require('../services/auditService');
 
 const signToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -66,6 +67,16 @@ exports.register = async (req, res) => {
 
     const admin = await Admin.create({ username, password, name, email, phone, role });
 
+    await createAuditLog({
+      admin: req.admin,
+      action: `Created staff account ${admin.username} (${admin.role})`,
+      entity: 'Admin',
+      entityId: admin._id,
+      oldValue: null,
+      newValue: serializeAdmin(admin),
+      ipAddress: req.ip,
+    });
+
     res.status(201).json({
       admin: serializeAdmin(admin),
     });
@@ -92,15 +103,29 @@ exports.updateStaff = async (req, res) => {
   try {
     const { name, email, phone, role } = req.body;
 
+    const previousStaff = await Admin.findById(req.params.id)
+      .select('username name email phone role isActive createdAt updatedAt')
+      .lean();
+
+    if (!previousStaff) {
+      return res.status(404).json({ message: 'Staff member not found' });
+    }
+
     const staff = await Admin.findByIdAndUpdate(
       req.params.id,
       { name, email, phone, role },
       { new: true, runValidators: true }
     ).select('username name email phone role isActive createdAt updatedAt');
 
-    if (!staff) {
-      return res.status(404).json({ message: 'Staff member not found' });
-    }
+    await createAuditLog({
+      admin: req.admin,
+      action: `Updated staff account ${staff.username}`,
+      entity: 'Admin',
+      entityId: staff._id,
+      oldValue: previousStaff,
+      newValue: staff.toObject(),
+      ipAddress: req.ip,
+    });
 
     res.json({ staff });
   } catch (err) {
@@ -115,15 +140,29 @@ exports.deactivateStaff = async (req, res) => {
       return res.status(400).json({ message: 'You cannot deactivate your own account' });
     }
 
+    const previousStaff = await Admin.findById(req.params.id)
+      .select('username name email phone role isActive createdAt updatedAt')
+      .lean();
+
+    if (!previousStaff) {
+      return res.status(404).json({ message: 'Staff member not found' });
+    }
+
     const staff = await Admin.findByIdAndUpdate(
       req.params.id,
       { isActive: false },
       { new: true }
     ).select('username name email phone role isActive createdAt updatedAt');
 
-    if (!staff) {
-      return res.status(404).json({ message: 'Staff member not found' });
-    }
+    await createAuditLog({
+      admin: req.admin,
+      action: `Deactivated staff account ${staff.username}`,
+      entity: 'Admin',
+      entityId: staff._id,
+      oldValue: previousStaff,
+      newValue: staff.toObject(),
+      ipAddress: req.ip,
+    });
 
     res.json({ staff });
   } catch (err) {

@@ -3,6 +3,7 @@ const AccessControlLog = require('../models/AccessControlLog');
 const UnauthorizedLog = require('../models/UnauthorizedLog');
 const TerminalConfig = require('../models/TerminalConfig');
 const AlertLog = require('../models/AlertLog');
+const { createAuditLog } = require('../services/auditService');
 
 const startOfToday = () => {
   const now = new Date();
@@ -70,6 +71,16 @@ exports.blockStudent = async (req, res) => {
       timestamp: now,
     });
 
+    await createAuditLog({
+      admin: req.admin,
+      action: `Blocked student ${student.name} (${student.sapId})`,
+      entity: 'Student',
+      entityId: student._id,
+      oldValue: { accessStatus: 'allowed' },
+      newValue: { accessStatus: 'blocked', blockReason: finalReason },
+      ipAddress: req.ip,
+    });
+
     const populatedStudent = await Student.findById(student._id)
       .populate('hostel', 'name')
       .populate('blockedBy', 'name email');
@@ -112,6 +123,16 @@ exports.unblockStudent = async (req, res) => {
       reason: reason.trim(),
       performedBy: req.admin._id,
       timestamp: now,
+    });
+
+    await createAuditLog({
+      admin: req.admin,
+      action: `Unblocked student ${student.name} (${student.sapId})`,
+      entity: 'Student',
+      entityId: student._id,
+      oldValue: { accessStatus: 'blocked', blockReason: student.blockReason },
+      newValue: { accessStatus: 'allowed', unblockReason: reason.trim() },
+      ipAddress: req.ip,
     });
 
     const populatedStudent = await Student.findById(student._id)

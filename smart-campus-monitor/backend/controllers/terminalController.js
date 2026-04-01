@@ -2,6 +2,7 @@ const TerminalConfig = require('../models/TerminalConfig');
 const EntryLog = require('../models/EntryLog');
 const UnauthorizedLog = require('../models/UnauthorizedLog');
 const { syncAllStudentsToNewTerminal } = require('../services/fingerprintService');
+const { createAuditLog } = require('../services/auditService');
 
 const toNumber = (value) => Number(value);
 
@@ -119,6 +120,16 @@ exports.createTerminal = async (req, res) => {
       addedBy: req.admin?._id || null,
     });
 
+    await createAuditLog({
+      admin: req.admin,
+      action: `Created terminal ${terminal.terminalLabel}`,
+      entity: 'TerminalConfig',
+      entityId: terminal._id,
+      oldValue: null,
+      newValue: terminal.toObject(),
+      ipAddress: req.ip,
+    });
+
     if (!terminal.isEnrollmentStation && terminal.terminalIP) {
       syncAllStudentsToNewTerminal(terminal.terminalIP).catch((error) => {
         console.error('Initial terminal sync failed:', error.message);
@@ -140,8 +151,19 @@ exports.updateTerminal = async (req, res) => {
       return res.status(404).json({ message: 'Terminal not found' });
     }
 
+    const previousValue = terminal.toObject();
     Object.assign(terminal, buildTerminalPayload(req.body, terminal));
     await terminal.save();
+
+    await createAuditLog({
+      admin: req.admin,
+      action: `Updated terminal ${terminal.terminalLabel}`,
+      entity: 'TerminalConfig',
+      entityId: terminal._id,
+      oldValue: previousValue,
+      newValue: terminal.toObject(),
+      ipAddress: req.ip,
+    });
 
     res.json(await formatTerminalForResponse(terminal));
   } catch (error) {
@@ -159,6 +181,16 @@ exports.deleteTerminal = async (req, res) => {
     if (!terminal) {
       return res.status(404).json({ message: 'Terminal not found' });
     }
+
+    await createAuditLog({
+      admin: req.admin,
+      action: `Deleted terminal ${terminal.terminalLabel}`,
+      entity: 'TerminalConfig',
+      entityId: terminal._id,
+      oldValue: terminal.toObject ? terminal.toObject() : terminal,
+      newValue: null,
+      ipAddress: req.ip,
+    });
 
     res.json({ message: 'Terminal deleted successfully' });
   } catch (error) {

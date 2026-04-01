@@ -4,6 +4,7 @@ const {
   normalizeCourse,
   normalizeDepartment,
 } = require('../utils/studentMeta');
+const { createAuditLog } = require('../services/auditService');
 
 const normalizeStudentPayload = (payload = {}) => ({
   ...payload,
@@ -58,6 +59,17 @@ exports.getAllStudents = async (req, res) => {
 exports.createStudent = async (req, res) => {
   try {
     const student = await Student.create(normalizeStudentPayload(req.body));
+
+    await createAuditLog({
+      admin: req.admin,
+      action: `Created student ${student.name} (${student.sapId})`,
+      entity: 'Student',
+      entityId: student._id,
+      oldValue: null,
+      newValue: student.toObject(),
+      ipAddress: req.ip,
+    });
+
     res.status(201).json(student);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -67,14 +79,27 @@ exports.createStudent = async (req, res) => {
 // PUT /api/students/:sapId
 exports.updateStudent = async (req, res) => {
   try {
+    const previousStudent = await Student.findOne({ sapId: req.params.sapId }).lean();
+    if (!previousStudent) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
     const student = await Student.findOneAndUpdate(
       { sapId: req.params.sapId },
       normalizeStudentPayload(req.body),
       { new: true, runValidators: true }
     );
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
-    }
+
+    await createAuditLog({
+      admin: req.admin,
+      action: `Updated student ${student.name} (${student.sapId})`,
+      entity: 'Student',
+      entityId: student._id,
+      oldValue: previousStudent,
+      newValue: student.toObject(),
+      ipAddress: req.ip,
+    });
+
     res.json(student);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -84,14 +109,27 @@ exports.updateStudent = async (req, res) => {
 // DELETE /api/students/:sapId
 exports.deleteStudent = async (req, res) => {
   try {
+    const previousStudent = await Student.findOne({ sapId: req.params.sapId }).lean();
+    if (!previousStudent) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
     const student = await Student.findOneAndUpdate(
       { sapId: req.params.sapId },
       { isActive: false },
       { new: true }
     );
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
-    }
+
+    await createAuditLog({
+      admin: req.admin,
+      action: `Deactivated student ${student.name} (${student.sapId})`,
+      entity: 'Student',
+      entityId: student._id,
+      oldValue: previousStudent,
+      newValue: student.toObject(),
+      ipAddress: req.ip,
+    });
+
     res.json({ message: 'Student deactivated' });
   } catch (err) {
     res.status(500).json({ message: err.message });
