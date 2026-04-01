@@ -85,4 +85,13 @@ export const updateHostelApi = (id, data) => api.put(`/hostels/${id}`, data);
 export const deleteHostelApi = (id) => api.delete(`/hostels/${id}`);
 export const getHostelStudentsApi = (id) => api.get(`/hostels/${id}/students`);
 
+// Enrollment
+export const initiateEnrollmentApi = (studentId, data) =>
+  api.post(`/enrollment/initiate/${studentId}`, data);
+export const confirmEnrollmentApi = (studentId, data) =>
+  api.post(`/enrollment/confirm/${studentId}`, data);
+export const updateEnrollmentTypeApi = (studentId, data) =>
+  api.put(`/enrollment/update-type/${studentId}`, data);
+export const getEnrollmentStatsApi = () => api.get('/enrollment/stats');
+
 export default api;

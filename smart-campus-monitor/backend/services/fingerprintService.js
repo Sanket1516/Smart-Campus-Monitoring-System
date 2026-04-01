@@ -163,6 +163,33 @@ const pullTemplateFromDevice = async (terminalIP, zktUserID) =>
     return template;
   });
 
+const pushUserToDevice = async (terminalIP, zktUserID, name) =>
+  withDevice(terminalIP, async (client) => {
+    const users = await client.getUsers();
+    const existingUser = findDeviceUser(users, zktUserID);
+
+    if (existingUser) {
+      return {
+        success: true,
+        terminalIP,
+        zktUserID: Number(zktUserID),
+        created: false,
+      };
+    }
+
+    await client.executeCmd(
+      COMMANDS.CMD_USER_WRQ,
+      buildUserBuffer({ zktUserID: Number(zktUserID), name })
+    );
+
+    return {
+      success: true,
+      terminalIP,
+      zktUserID: Number(zktUserID),
+      created: true,
+    };
+  });
+
 const pushTemplateToDevice = async (terminalIP, zktUserID, name, template) =>
   withDevice(terminalIP, async (client) => {
     const users = await client.getUsers();
@@ -306,6 +333,7 @@ const syncAllStudentsToNewTerminal = async (terminalIP) => {
 
 module.exports = {
   pullTemplateFromDevice,
+  pushUserToDevice,
   pushTemplateToDevice,
   syncStudentToAllTerminals,
   syncAllStudentsToNewTerminal,
