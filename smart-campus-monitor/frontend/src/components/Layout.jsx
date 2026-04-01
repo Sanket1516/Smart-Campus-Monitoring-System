@@ -15,6 +15,9 @@ import {
   HiOutlineSun,
 } from 'react-icons/hi';
 import { useEffect, useState } from 'react';
+import AlertBell from './AlertBell';
+import LiveScanTicker from './LiveScanTicker';
+import { useSocket } from '../context/SocketContext';
 
 const navItems = [
   { to: '/dashboard', icon: HiOutlineViewGrid, label: 'Dashboard' },
@@ -28,6 +31,7 @@ const navItems = [
 
 export default function Layout() {
   const { admin, logout } = useAuth();
+  const { connected } = useSocket();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
@@ -129,7 +133,17 @@ export default function Layout() {
           <h2 className="text-lg font-semibold text-gray-800 dark:text-slate-100">
             Smart Campus Entry Monitoring System
           </h2>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            <span
+              className={`hidden rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide md:inline-flex ${
+                connected
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+                  : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+              }`}
+            >
+              {connected ? 'Socket Online' : 'Socket Offline'}
+            </span>
+            <AlertBell />
             <button
               type="button"
               onClick={() => setDarkMode((current) => !current)}
@@ -150,6 +164,7 @@ export default function Layout() {
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50 dark:bg-slate-950">
           <Outlet />
         </main>
+        <LiveScanTicker />
       </div>
     </div>
   );

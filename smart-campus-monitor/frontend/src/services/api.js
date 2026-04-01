@@ -35,6 +35,8 @@ export const getStaffApi = () => api.get('/auth/staff');
 export const registerStaffApi = (data) => api.post('/auth/register', data);
 export const updateStaffApi = (id, data) => api.put(`/auth/staff/${id}`, data);
 export const deactivateStaffApi = (id) => api.delete(`/auth/staff/${id}`);
+export const getAlertsApi = (params) => api.get('/alerts', { params });
+export const markAlertsReadApi = (alertIds) => api.post('/alerts/read', { alertIds });
 
 // Scan
 export const processScanApi = (sapId) => api.post('/scan', { sapId });

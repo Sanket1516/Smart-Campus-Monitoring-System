@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
@@ -18,9 +19,12 @@ const notifyRoutes = require('./routes/notify');
 const visitorRoutes = require('./routes/visitors');
 const terminalRoutes = require('./routes/terminals');
 const hostelRoutes = require('./routes/hostels');
+const alertRoutes = require('./routes/alerts');
 const { startTerminalJobs } = require('./jobs/terminalJobs');
+const { attachSocketServer } = require('./socket');
 
 const app = express();
+const httpServer = http.createServer(app);
 
 // Connect to MongoDB
 connectDB();
@@ -61,6 +65,7 @@ app.use('/api/notify', notifyRoutes);
 app.use('/api/visitors', visitorRoutes);
 app.use('/api/terminals', terminalRoutes);
 app.use('/api/hostels', hostelRoutes);
+app.use('/api/alerts', alertRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -71,8 +76,9 @@ app.get('/api/health', (_req, res) => {
 app.use(errorHandler);
 
 startTerminalJobs();
+attachSocketServer(httpServer);
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
 });
