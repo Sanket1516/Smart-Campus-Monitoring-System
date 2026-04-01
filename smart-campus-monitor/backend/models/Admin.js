@@ -20,10 +20,25 @@ const adminSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    email: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: '',
+    },
+    phone: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     role: {
       type: String,
-      enum: ['admin', 'security'],
+      enum: ['admin', 'warden', 'security'],
       default: 'security',
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   { timestamps: true }

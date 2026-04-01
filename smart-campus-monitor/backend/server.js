@@ -17,6 +17,7 @@ const dashboardRoutes = require('./routes/dashboard');
 const notifyRoutes = require('./routes/notify');
 const visitorRoutes = require('./routes/visitors');
 const terminalRoutes = require('./routes/terminals');
+const hostelRoutes = require('./routes/hostels');
 const { startTerminalJobs } = require('./jobs/terminalJobs');
 
 const app = express();
@@ -59,6 +60,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notify', notifyRoutes);
 app.use('/api/visitors', visitorRoutes);
 app.use('/api/terminals', terminalRoutes);
+app.use('/api/hostels', hostelRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

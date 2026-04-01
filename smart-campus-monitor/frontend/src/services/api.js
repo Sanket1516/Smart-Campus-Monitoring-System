@@ -31,6 +31,10 @@ api.interceptors.response.use(
 // Auth
 export const loginApi = (data) => api.post('/auth/login', data);
 export const getMeApi = () => api.get('/auth/me');
+export const getStaffApi = () => api.get('/auth/staff');
+export const registerStaffApi = (data) => api.post('/auth/register', data);
+export const updateStaffApi = (id, data) => api.put(`/auth/staff/${id}`, data);
+export const deactivateStaffApi = (id) => api.delete(`/auth/staff/${id}`);
 
 // Scan
 export const processScanApi = (sapId) => api.post('/scan', { sapId });
@@ -70,5 +74,13 @@ export const deleteTerminalApi = (machineNumber) =>
   api.delete(`/terminals/${machineNumber}`);
 export const getTerminalLogsApi = (machineNumber, params) =>
   api.get(`/terminals/${machineNumber}/logs`, { params });
+
+// Hostels
+export const getHostelsApi = () => api.get('/hostels');
+export const getHostelApi = (id) => api.get(`/hostels/${id}`);
+export const createHostelApi = (data) => api.post('/hostels', data);
+export const updateHostelApi = (id, data) => api.put(`/hostels/${id}`, data);
+export const deleteHostelApi = (id) => api.delete(`/hostels/${id}`);
+export const getHostelStudentsApi = (id) => api.get(`/hostels/${id}/students`);
 
 export default api;

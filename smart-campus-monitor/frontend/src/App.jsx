@@ -38,7 +38,8 @@ export default function App() {
           <Route path="analytics" element={<Analytics />} />
           <Route path="hostellers" element={<Hostellers />} />
           <Route path="admin/terminals" element={<Terminals />} />
-          <Route path="settings" element={<Settings />} />
+          <Route path="settings" element={<Navigate to="/admin/settings" replace />} />
+          <Route path="admin/settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>

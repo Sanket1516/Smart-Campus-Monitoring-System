@@ -23,7 +23,7 @@ const navItems = [
   { to: '/analytics', icon: HiOutlineChartBar, label: 'Analytics' },
   { to: '/hostellers', icon: HiOutlineUserGroup, label: 'Hostellers' },
   { to: '/admin/terminals', icon: HiOutlineDesktopComputer, label: 'Terminals' },
-  { to: '/settings', icon: HiOutlineCog, label: 'Settings' },
+  { to: '/admin/settings', icon: HiOutlineCog, label: 'Settings' },
 ];
 
 export default function Layout() {
