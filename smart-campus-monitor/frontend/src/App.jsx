@@ -14,6 +14,7 @@ import Enrollment from './pages/Enrollment';
 import AccessControl from './pages/AccessControl';
 import WardenPortal from './pages/WardenPortal';
 import StudentExitRequest from './pages/StudentExitRequest';
+import PublicLiveDashboard from './pages/PublicLiveDashboard';
 
 function PrivateRoute({ children }) {
   const { admin, loading } = useAuth();
@@ -27,6 +28,7 @@ export default function App() {
       <Toaster position="top-right" />
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/live" element={<PublicLiveDashboard />} />
         <Route path="/student/exit-request" element={<StudentExitRequest />} />
         <Route
           path="/"

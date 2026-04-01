@@ -114,5 +114,6 @@ export const getStudentHostellerHistoryApi = (studentId) =>
 export const getHostelHostellerRequestsApi = (hostelId) =>
   api.get(`/hosteller/hostel/${hostelId}`);
 export const getPublicHostellerStatusApi = (sapId) => api.get(`/hosteller/public/${sapId}`);
+export const getPublicLiveDashboardApi = () => api.get('/live');
 
 export default api;
