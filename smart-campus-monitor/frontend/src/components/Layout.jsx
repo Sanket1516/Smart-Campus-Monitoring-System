@@ -16,10 +16,11 @@ import {
   HiOutlineMoon,
   HiOutlineSun,
 } from 'react-icons/hi';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import AlertBell from './AlertBell';
 import LiveScanTicker from './LiveScanTicker';
 import { useSocket } from '../context/SocketContext';
+import { getFilteredNavItems } from '../utils/rolePermissions';
 
 const navItems = [
   { to: '/dashboard', icon: HiOutlineViewGrid, label: 'Dashboard' },
@@ -45,6 +46,11 @@ export default function Layout() {
     if (savedTheme) return savedTheme === 'dark';
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
+
+  // Filter nav items based on user role
+  const filteredNavItems = useMemo(() => {
+    return getFilteredNavItems(navItems, admin?.role);
+  }, [admin?.role]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -73,7 +79,7 @@ export default function Layout() {
 
       {/* Nav links */}
       <nav className="flex-1 p-4 space-y-1">
-        {navItems.map((item) => (
+        {filteredNavItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

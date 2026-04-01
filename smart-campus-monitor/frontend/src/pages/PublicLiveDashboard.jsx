@@ -401,31 +401,32 @@ export default function PublicLiveDashboard() {
                 <p className="text-sm text-slate-300">Live entry and exit trend across the campus.</p>
               </div>
             </div>
-            <Line
-              data={hourlyData}
-              options={{
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                  legend: {
-                    position: 'bottom',
-                    labels: { color: '#e2e8f0' },
+            <div className="h-[320px]">
+              <Line
+                data={hourlyData}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: {
+                      position: 'bottom',
+                      labels: { color: '#e2e8f0' },
+                    },
                   },
-                },
-                scales: {
-                  x: {
-                    ticks: { color: '#cbd5e1' },
-                    grid: { color: 'rgba(148, 163, 184, 0.15)' },
+                  scales: {
+                    x: {
+                      ticks: { color: '#cbd5e1' },
+                      grid: { color: 'rgba(148, 163, 184, 0.15)' },
+                    },
+                    y: {
+                      beginAtZero: true,
+                      ticks: { color: '#cbd5e1' },
+                      grid: { color: 'rgba(148, 163, 184, 0.15)' },
+                    },
                   },
-                  y: {
-                    beginAtZero: true,
-                    ticks: { color: '#cbd5e1' },
-                    grid: { color: 'rgba(148, 163, 184, 0.15)' },
-                  },
-                },
-              }}
-              height={320}
-            />
+                }}
+              />
+            </div>
           </section>
 
           <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 backdrop-blur">

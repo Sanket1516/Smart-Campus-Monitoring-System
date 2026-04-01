@@ -486,16 +486,17 @@ export default function Dashboard() {
             <HiOutlineClock className="h-5 w-5" />
             Hourly Entry / Exit
           </h2>
-          <Line
-            data={hourlyData}
-            options={{
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { position: 'bottom' } },
-              scales: { y: { beginAtZero: true } },
-            }}
-            height={300}
-          />
+          <div className="h-[300px]">
+            <Line
+              data={hourlyData}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } },
+                scales: { y: { beginAtZero: true } },
+              }}
+            />
+          </div>
         </div>
 
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm 2xl:col-span-1">
@@ -503,16 +504,17 @@ export default function Dashboard() {
             <HiOutlineChartBar className="h-5 w-5" />
             Gate-wise Activity
           </h2>
-          <Bar
-            data={gateChartData}
-            options={{
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { position: 'bottom' } },
-              scales: { y: { beginAtZero: true } },
-            }}
-            height={300}
-          />
+          <div className="h-[300px]">
+            <Bar
+              data={gateChartData}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } },
+                scales: { y: { beginAtZero: true } },
+              }}
+            />
+          </div>
         </div>
 
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm 2xl:col-span-1">
@@ -520,16 +522,17 @@ export default function Dashboard() {
             <HiOutlineUserGroup className="h-5 w-5" />
             Hostel-wise Movement
           </h2>
-          <Bar
-            data={hostelChartData}
-            options={{
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { position: 'bottom' } },
-              scales: { y: { beginAtZero: true } },
-            }}
-            height={300}
-          />
+          <div className="h-[300px]">
+            <Bar
+              data={hostelChartData}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } },
+                scales: { y: { beginAtZero: true } },
+              }}
+            />
+          </div>
         </div>
       </div>
 
