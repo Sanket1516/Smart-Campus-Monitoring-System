@@ -20,6 +20,7 @@ const visitorRoutes = require('./routes/visitors');
 const terminalRoutes = require('./routes/terminals');
 const hostelRoutes = require('./routes/hostels');
 const alertRoutes = require('./routes/alerts');
+const fingerprintRoutes = require('./routes/fingerprint');
 const { startTerminalJobs } = require('./jobs/terminalJobs');
 const { attachSocketServer } = require('./socket');
 
@@ -66,6 +67,7 @@ app.use('/api/visitors', visitorRoutes);
 app.use('/api/terminals', terminalRoutes);
 app.use('/api/hostels', hostelRoutes);
 app.use('/api/alerts', alertRoutes);
+app.use('/api/fingerprint', fingerprintRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

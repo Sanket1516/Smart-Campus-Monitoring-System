@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const TerminalConfig = require('../models/TerminalConfig');
+const { emitTerminalOffline } = require('../services/socketService');
 
 let terminalOfflineInterval;
 let midnightResetJob;
@@ -12,11 +13,30 @@ const startTerminalOfflineMonitor = () => {
   terminalOfflineInterval = setInterval(async () => {
     try {
       const offlineThreshold = new Date(Date.now() - 2 * 60 * 1000);
+      const offlineTerminals = await TerminalConfig.find({
+        isOnline: true,
+        lastSeen: { $lt: offlineThreshold },
+      }).lean();
+
+      if (!offlineTerminals.length) {
+        return;
+      }
+
+      offlineTerminals.forEach((terminal) => {
+        emitTerminalOffline({
+          gateName: terminal.gateName,
+          gateNumber: terminal.gateNumber,
+          terminalNumber: terminal.terminalNumber,
+          terminalLabel: terminal.terminalLabel,
+          machineNumber: terminal.machineNumber,
+          deviceSN: terminal.deviceSN,
+          lastSeen: terminal.lastSeen,
+        });
+      });
 
       await TerminalConfig.updateMany(
         {
-          isOnline: true,
-          lastSeen: { $lt: offlineThreshold },
+          _id: { $in: offlineTerminals.map((terminal) => terminal._id) },
         },
         {
           $set: { isOnline: false },
