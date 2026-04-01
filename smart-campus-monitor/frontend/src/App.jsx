@@ -12,6 +12,8 @@ import Settings from './pages/Settings';
 import Terminals from './pages/Terminals';
 import Enrollment from './pages/Enrollment';
 import AccessControl from './pages/AccessControl';
+import WardenPortal from './pages/WardenPortal';
+import StudentExitRequest from './pages/StudentExitRequest';
 
 function PrivateRoute({ children }) {
   const { admin, loading } = useAuth();
@@ -25,6 +27,7 @@ export default function App() {
       <Toaster position="top-right" />
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/student/exit-request" element={<StudentExitRequest />} />
         <Route
           path="/"
           element={
@@ -41,6 +44,7 @@ export default function App() {
           <Route path="hostellers" element={<Hostellers />} />
           <Route path="admin/enrollment" element={<Enrollment />} />
           <Route path="admin/access-control" element={<AccessControl />} />
+          <Route path="admin/warden-portal" element={<WardenPortal />} />
           <Route path="admin/terminals" element={<Terminals />} />
           <Route path="settings" element={<Navigate to="/admin/settings" replace />} />
           <Route path="admin/settings" element={<Settings />} />

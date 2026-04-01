@@ -101,4 +101,18 @@ export const unblockStudentApi = (studentId, data) =>
 export const getBlockedStudentsApi = (params) => api.get('/access/blocked', { params });
 export const getAccessLogsApi = (studentId) => api.get(`/access/log/${studentId}`);
 
+// Hosteller requests
+export const createHostellerRequestApi = (data) => api.post('/hosteller/request', data);
+export const getHostellerRequestsApi = (params) => api.get('/hosteller/requests', { params });
+export const approveHostellerRequestApi = (requestId) =>
+  api.post(`/hosteller/approve/${requestId}`);
+export const rejectHostellerRequestApi = (requestId, data) =>
+  api.post(`/hosteller/reject/${requestId}`, data);
+export const getActiveHostellerRequestsApi = () => api.get('/hosteller/active');
+export const getStudentHostellerHistoryApi = (studentId) =>
+  api.get(`/hosteller/history/${studentId}`);
+export const getHostelHostellerRequestsApi = (hostelId) =>
+  api.get(`/hosteller/hostel/${hostelId}`);
+export const getPublicHostellerStatusApi = (sapId) => api.get(`/hosteller/public/${sapId}`);
+
 export default api;

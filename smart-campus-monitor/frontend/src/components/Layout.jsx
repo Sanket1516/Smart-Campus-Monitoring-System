@@ -29,6 +29,7 @@ const navItems = [
   { to: '/hostellers', icon: HiOutlineUserGroup, label: 'Hostellers' },
   { to: '/admin/enrollment', icon: HiOutlineBadgeCheck, label: 'Enrollment' },
   { to: '/admin/access-control', icon: HiOutlineShieldExclamation, label: 'Access Control' },
+  { to: '/admin/warden-portal', icon: HiOutlineClipboardList, label: 'Warden Portal' },
   { to: '/admin/terminals', icon: HiOutlineDesktopComputer, label: 'Terminals' },
   { to: '/admin/settings', icon: HiOutlineCog, label: 'Settings' },
 ];

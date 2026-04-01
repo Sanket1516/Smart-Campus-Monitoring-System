@@ -23,7 +23,9 @@ const alertRoutes = require('./routes/alerts');
 const fingerprintRoutes = require('./routes/fingerprint');
 const enrollmentRoutes = require('./routes/enrollment');
 const accessRoutes = require('./routes/access');
+const hostellerRoutes = require('./routes/hosteller');
 const { startTerminalJobs } = require('./jobs/terminalJobs');
+const { startHostellerJobs } = require('./jobs/hostellerJobs');
 const { attachSocketServer } = require('./socket');
 
 const app = express();
@@ -72,6 +74,7 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/fingerprint', fingerprintRoutes);
 app.use('/api/enrollment', enrollmentRoutes);
 app.use('/api/access', accessRoutes);
+app.use('/api/hosteller', hostellerRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -82,6 +85,7 @@ app.get('/api/health', (_req, res) => {
 app.use(errorHandler);
 
 startTerminalJobs();
+startHostellerJobs();
 attachSocketServer(httpServer);
 
 const PORT = process.env.PORT || 5000;
