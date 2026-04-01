@@ -1,6 +1,8 @@
 const Student = require('../models/Student');
 const EntryLog = require('../models/EntryLog');
 const UnauthorizedLog = require('../models/UnauthorizedLog');
+const HostellerRequest = require('../models/HostellerRequest');
+const AlertLog = require('../models/AlertLog');
 const { CATEGORY_ALIASES, isHosteller, normalizeCategory } = require('../utils/studentMeta');
 
 const formatDateLocal = (date = new Date()) => {
@@ -21,16 +23,25 @@ const shiftDateStr = (dateStr, offsetDays) => {
 exports.getDashboardStats = async (req, res) => {
   try {
     const selectedDate = req.query.date || todayStr();
+    const hostelId = req.query.hostelId || '';
     const weekStart = shiftDateStr(selectedDate, -6);
 
     // Run all queries in parallel
     const [
-      totalStudents,
+      activeStudentsRaw,
       todayLogs,
       unauthorizedToday,
       last7DaysLogs,
+      blockedAttemptsToday,
+      activeApprovalsRaw,
+      unauthorizedFeed,
     ] = await Promise.all([
-      Student.countDocuments({ isActive: true }),
+      Student.find({ isActive: true })
+        .select(
+          'sapId name category department year course hostel studentType isHosteller roomNumber photoUrl'
+        )
+        .populate('hostel', 'name code')
+        .lean(),
       EntryLog.find({ date: selectedDate }),
       UnauthorizedLog.countDocuments({ date: selectedDate }),
       EntryLog.aggregate([
@@ -58,30 +69,50 @@ exports.getDashboardStats = async (req, res) => {
         },
         { $sort: { _id: 1 } },
       ]),
+      AlertLog.countDocuments({
+        type: 'blocked',
+        timestamp: {
+          $gte: new Date(`${selectedDate}T00:00:00`),
+          $lt: new Date(`${shiftDateStr(selectedDate, 1)}T00:00:00`),
+        },
+      }),
+      HostellerRequest.find({
+        status: 'approved',
+        usedForEntry: false,
+      })
+        .populate('student', 'sapId name')
+        .populate('hostel', 'name code')
+        .lean(),
+      UnauthorizedLog.find({ date: selectedDate }).sort({ timestamp: -1 }).limit(50).lean(),
     ]);
 
-    const activeStudents = await Student.find({ isActive: true })
-      .select('sapId name category department year course')
-      .lean();
+    const activeStudents = activeStudentsRaw;
+    const filteredStudents = hostelId
+      ? activeStudents.filter((student) => String(student.hostel?._id || '') === hostelId)
+      : activeStudents;
+    const filteredSapIds = new Set(filteredStudents.map((student) => student.sapId));
+    const filteredTodayLogs = hostelId
+      ? todayLogs.filter((log) => filteredSapIds.has(log.sapId))
+      : todayLogs;
 
-    const totalDayScholars = activeStudents.filter(
+    const totalDayScholars = filteredStudents.filter(
       (student) => normalizeCategory(student.category) === 'dayscholars'
     ).length;
-    const totalHostellers = activeStudents.filter(
+    const totalHostellers = filteredStudents.filter(
       (student) => normalizeCategory(student.category) === 'hostellers'
     ).length;
 
     const studentsBySapId = new Map(activeStudents.map((student) => [student.sapId, student]));
 
     // Calculate today's stats
-    const uniqueSapIds = new Set(todayLogs.map((l) => l.sapId));
-    const enteredToday = todayLogs.filter((l) => l.entryTime).length;
-    const exitedToday = todayLogs.filter((l) => l.exitTime).length;
+    const uniqueSapIds = new Set(filteredTodayLogs.map((l) => l.sapId));
+    const enteredToday = filteredTodayLogs.filter((l) => l.entryTime).length;
+    const exitedToday = filteredTodayLogs.filter((l) => l.exitTime).length;
     const currentlyInside = new Set();
 
     // Build currently-inside set from today's logs
     const studentLogsMap = {};
-    for (const log of todayLogs) {
+    for (const log of filteredTodayLogs) {
       if (!studentLogsMap[log.sapId]) studentLogsMap[log.sapId] = [];
       studentLogsMap[log.sapId].push(log);
     }
@@ -93,7 +124,7 @@ exports.getDashboardStats = async (req, res) => {
     }
 
     // Hostellers currently outside
-    const hostellerLogs = todayLogs.filter((l) => isHosteller(l.category));
+    const hostellerLogs = filteredTodayLogs.filter((l) => isHosteller(l.category));
     const hostellersOutside = new Set();
     const hostellerMap = {};
     for (const log of hostellerLogs) {
@@ -106,11 +137,11 @@ exports.getDashboardStats = async (req, res) => {
     }
 
     // Late returns for selected date
-    const lateReturns = todayLogs.filter((l) => l.lateReturn).length;
+    const lateReturns = filteredTodayLogs.filter((l) => l.lateReturn).length;
 
     // Peak entry hour
     const hourCounts = {};
-    for (const log of todayLogs) {
+    for (const log of filteredTodayLogs) {
       if (log.entryTime) {
         const hour = new Date(log.entryTime).getHours();
         hourCounts[hour] = (hourCounts[hour] || 0) + 1;
@@ -174,13 +205,141 @@ exports.getDashboardStats = async (req, res) => {
     );
     const lateReturnStudents = mapStudents(
       Array.from(
-        new Set(todayLogs.filter((log) => log.lateReturn).map((log) => log.sapId))
+        new Set(filteredTodayLogs.filter((log) => log.lateReturn).map((log) => log.sapId))
       ).map((sapId) => studentsBySapId.get(sapId))
     );
-    const totalStudentList = mapStudents(activeStudents);
+    const totalStudentList = mapStudents(filteredStudents);
+
+    const activeApprovals = hostelId
+      ? activeApprovalsRaw.filter((request) => String(request.hostel?._id || '') === hostelId)
+      : activeApprovalsRaw;
+
+    const gateActivityMap = {};
+    for (const log of filteredTodayLogs) {
+      const gateKey = log.gateName || 'Unknown Gate';
+      if (!gateActivityMap[gateKey]) {
+        gateActivityMap[gateKey] = { gateName: gateKey, entries: 0, exits: 0, unauthorized: 0 };
+      }
+      if (log.entryTime) gateActivityMap[gateKey].entries += 1;
+      if (log.exitTime) gateActivityMap[gateKey].exits += 1;
+    }
+
+    if (!hostelId) {
+      for (const log of unauthorizedFeed) {
+        const gateKey = log.gateName || 'Unknown Gate';
+        if (!gateActivityMap[gateKey]) {
+          gateActivityMap[gateKey] = { gateName: gateKey, entries: 0, exits: 0, unauthorized: 0 };
+        }
+        gateActivityMap[gateKey].unauthorized += 1;
+      }
+    }
+
+    const hostelMovementMap = {};
+    for (const student of activeStudents) {
+      const key = student.hostel?._id ? String(student.hostel._id) : 'unassigned';
+      if (!hostelMovementMap[key]) {
+        hostelMovementMap[key] = {
+          hostelId: student.hostel?._id || null,
+          hostelName: student.hostel?.name || 'Unassigned',
+          entries: 0,
+          exits: 0,
+          inside: 0,
+          outside: 0,
+          late: 0,
+          approved: 0,
+        };
+      }
+    }
+
+    for (const log of todayLogs) {
+      const student = studentsBySapId.get(log.sapId);
+      const key = student?.hostel?._id ? String(student.hostel._id) : 'unassigned';
+      if (!hostelMovementMap[key]) continue;
+      if (log.entryTime) hostelMovementMap[key].entries += 1;
+      if (log.exitTime) hostelMovementMap[key].exits += 1;
+    }
+
+    for (const sapId of currentlyInside) {
+      const student = studentsBySapId.get(sapId);
+      const key = student?.hostel?._id ? String(student.hostel._id) : 'unassigned';
+      if (hostelMovementMap[key]) hostelMovementMap[key].inside += 1;
+    }
+
+    for (const sapId of hostellersOutside) {
+      const student = studentsBySapId.get(sapId);
+      const key = student?.hostel?._id ? String(student.hostel._id) : 'unassigned';
+      if (hostelMovementMap[key]) hostelMovementMap[key].outside += 1;
+    }
+
+    for (const sapId of new Set(filteredTodayLogs.filter((log) => log.lateReturn).map((log) => log.sapId))) {
+      const student = studentsBySapId.get(sapId);
+      const key = student?.hostel?._id ? String(student.hostel._id) : 'unassigned';
+      if (hostelMovementMap[key]) hostelMovementMap[key].late += 1;
+    }
+
+    for (const request of activeApprovalsRaw) {
+      const key = request.hostel?._id ? String(request.hostel._id) : 'unassigned';
+      if (hostelMovementMap[key]) hostelMovementMap[key].approved += 1;
+    }
+
+    const hostelMetrics = hostelId
+      ? hostelMovementMap[hostelId] || {
+          hostelId,
+          hostelName: filteredStudents[0]?.hostel?.name || 'Selected Hostel',
+          inside: 0,
+          outside: 0,
+          late: 0,
+          approved: 0,
+          entries: 0,
+          exits: 0,
+        }
+      : null;
+
+    const liveActivity = [
+      ...filteredTodayLogs.flatMap((log) => {
+        const base = {
+          id: `${log._id}-entry`,
+          type: log.exitTime ? 'exit' : 'entry',
+          studentName: log.studentName,
+          sapId: log.sapId,
+          gateName: log.gateName,
+          gateNumber: log.gateNumber,
+          terminalNumber: log.terminalNumber,
+          terminalLabel: log.terminalLabel,
+          machineNumber: log.machineNumber,
+          time: log.exitTime || log.entryTime || log.createdAt,
+          eventType: 'authorized',
+          hostelName: studentsBySapId.get(log.sapId)?.hostel?.name || '',
+        };
+
+        if (log.entryTime && log.exitTime) {
+          return [
+            { ...base, id: `${log._id}-entry`, type: 'entry', time: log.entryTime },
+            { ...base, id: `${log._id}-exit`, type: 'exit', time: log.exitTime },
+          ];
+        }
+
+        return [base];
+      }),
+      ...(!hostelId
+        ? unauthorizedFeed.map((log) => ({
+            id: `unauth-${log._id}`,
+            type: 'unauthorized',
+            eventType: 'unauthorized',
+            gateName: log.gateName,
+            gateNumber: log.gateNumber,
+            terminalNumber: log.terminalNumber,
+            terminalLabel: log.terminalLabel,
+            machineNumber: log.machineNumber,
+            time: log.timestamp || log.createdAt,
+          }))
+        : []),
+    ]
+      .sort((a, b) => new Date(b.time) - new Date(a.time))
+      .slice(0, 50);
 
     res.json({
-      totalStudents,
+      totalStudents: filteredStudents.length,
       totalDayScholars,
       totalHostellers,
       todayStats: {
@@ -189,9 +348,11 @@ exports.getDashboardStats = async (req, res) => {
         currentlyInside: currentlyInside.size,
         enteredToday,
         exitedToday,
-        unauthorizedAttempts: unauthorizedToday,
+        unauthorizedAttempts: hostelId ? unauthorizedToday : unauthorizedToday,
+        blockedAttemptsToday,
         hostellersOutside: hostellersOutside.size,
         lateReturns,
+        activeHostellerApprovals: activeApprovals.length,
       },
       studentGroups: {
         totalStudents: totalStudentList,
@@ -204,7 +365,14 @@ exports.getDashboardStats = async (req, res) => {
       },
       peakHours: hourCounts,
       weeklyTrend,
+      gateActivity: Object.values(gateActivityMap),
+      hostelMovement: Object.values(hostelMovementMap)
+        .filter((row) => !hostelId || String(row.hostelId || '') === hostelId)
+        .sort((a, b) => a.hostelName.localeCompare(b.hostelName)),
+      hostelMetrics,
+      liveActivity,
       selectedDate,
+      selectedHostelId: hostelId || null,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -215,12 +383,20 @@ exports.getDashboardStats = async (req, res) => {
 exports.getHourlyDistribution = async (req, res) => {
   try {
     const date = req.query.date || todayStr();
+    const hostelId = req.query.hostelId || '';
     const logs = await EntryLog.find({ date });
+
+    let filteredLogs = logs;
+    if (hostelId) {
+      const students = await Student.find({ isActive: true, hostel: hostelId }).select('sapId').lean();
+      const sapIds = new Set(students.map((student) => student.sapId));
+      filteredLogs = logs.filter((log) => sapIds.has(log.sapId));
+    }
 
     const distribution = {};
     for (let h = 0; h < 24; h++) distribution[h] = { entries: 0, exits: 0 };
 
-    for (const log of logs) {
+    for (const log of filteredLogs) {
       if (log.entryTime) {
         const h = new Date(log.entryTime).getHours();
         distribution[h].entries++;
