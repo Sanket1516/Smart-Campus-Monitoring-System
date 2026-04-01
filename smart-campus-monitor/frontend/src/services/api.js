@@ -60,4 +60,15 @@ export const sendNotifyApi = (data) => api.post('/notify', data);
 export const createVisitorEntryApi = (data) => api.post('/visitors', data);
 export const getVisitorEntriesApi = (params) => api.get('/visitors', { params });
 
+// Terminals
+export const getTerminalsApi = () => api.get('/terminals');
+export const getTerminalStatusApi = () => api.get('/terminals/status');
+export const createTerminalApi = (data) => api.post('/terminals', data);
+export const updateTerminalApi = (machineNumber, data) =>
+  api.put(`/terminals/${machineNumber}`, data);
+export const deleteTerminalApi = (machineNumber) =>
+  api.delete(`/terminals/${machineNumber}`);
+export const getTerminalLogsApi = (machineNumber, params) =>
+  api.get(`/terminals/${machineNumber}/logs`, { params });
+
 export default api;

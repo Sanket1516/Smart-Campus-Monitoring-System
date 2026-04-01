@@ -9,6 +9,7 @@ import StudentLogs from './pages/StudentLogs';
 import Analytics from './pages/Analytics';
 import Hostellers from './pages/Hostellers';
 import Settings from './pages/Settings';
+import Terminals from './pages/Terminals';
 
 function PrivateRoute({ children }) {
   const { admin, loading } = useAuth();
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="logs" element={<StudentLogs />} />
           <Route path="analytics" element={<Analytics />} />
           <Route path="hostellers" element={<Hostellers />} />
+          <Route path="admin/terminals" element={<Terminals />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" />} />

@@ -59,6 +59,73 @@ const studentSchema = new mongoose.Schema(
       min: 1,
       max: 5,
     },
+    zktUserID: {
+      type: Number,
+    },
+    fingerprintEnrolled: {
+      type: Boolean,
+      default: false,
+    },
+    fingerprintEnrolledAt: {
+      type: Date,
+      default: null,
+    },
+    fingerprintTemplate: {
+      type: String,
+      select: false,
+      default: null,
+    },
+    studentType: {
+      type: String,
+      enum: ['day_scholar', 'hosteller'],
+      default: 'day_scholar',
+    },
+    hostel: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Hostel',
+      default: null,
+    },
+    roomNumber: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    isHosteller: {
+      type: Boolean,
+      default: false,
+    },
+    wardenApprovalRequired: {
+      type: Boolean,
+      default: false,
+    },
+    accessStatus: {
+      type: String,
+      enum: ['allowed', 'blocked'],
+      default: 'allowed',
+    },
+    blockReason: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    blockedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin',
+      default: null,
+    },
+    blockedAt: {
+      type: Date,
+      default: null,
+    },
+    unblockReason: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    unblockedAt: {
+      type: Date,
+      default: null,
+    },
     photoUrl: {
       type: String,
       default: '',
@@ -70,6 +137,11 @@ const studentSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+studentSchema.index({ zktUserID: 1 }, { unique: true, sparse: true });
+studentSchema.index({ hostel: 1 });
+studentSchema.index({ studentType: 1 });
+studentSchema.index({ accessStatus: 1 });
 
 studentSchema.pre('validate', function (next) {
   const allowedDepartments = getDepartmentOptions(this.course);

@@ -7,6 +7,7 @@ import {
   HiOutlineChartBar,
   HiOutlineUserGroup,
   HiOutlineCog,
+  HiOutlineDesktopComputer,
   HiOutlineLogout,
   HiOutlineMenu,
   HiOutlineX,
@@ -21,6 +22,7 @@ const navItems = [
   { to: '/logs', icon: HiOutlineClipboardList, label: 'Entry Logs' },
   { to: '/analytics', icon: HiOutlineChartBar, label: 'Analytics' },
   { to: '/hostellers', icon: HiOutlineUserGroup, label: 'Hostellers' },
+  { to: '/admin/terminals', icon: HiOutlineDesktopComputer, label: 'Terminals' },
   { to: '/settings', icon: HiOutlineCog, label: 'Settings' },
 ];
 
