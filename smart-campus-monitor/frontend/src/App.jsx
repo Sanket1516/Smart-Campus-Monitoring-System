@@ -11,6 +11,7 @@ import Hostellers from './pages/Hostellers';
 import Settings from './pages/Settings';
 import Terminals from './pages/Terminals';
 import Enrollment from './pages/Enrollment';
+import AccessControl from './pages/AccessControl';
 
 function PrivateRoute({ children }) {
   const { admin, loading } = useAuth();
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="analytics" element={<Analytics />} />
           <Route path="hostellers" element={<Hostellers />} />
           <Route path="admin/enrollment" element={<Enrollment />} />
+          <Route path="admin/access-control" element={<AccessControl />} />
           <Route path="admin/terminals" element={<Terminals />} />
           <Route path="settings" element={<Navigate to="/admin/settings" replace />} />
           <Route path="admin/settings" element={<Settings />} />

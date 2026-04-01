@@ -94,4 +94,11 @@ export const updateEnrollmentTypeApi = (studentId, data) =>
   api.put(`/enrollment/update-type/${studentId}`, data);
 export const getEnrollmentStatsApi = () => api.get('/enrollment/stats');
 
+// Access control
+export const blockStudentApi = (studentId, data) => api.post(`/access/block/${studentId}`, data);
+export const unblockStudentApi = (studentId, data) =>
+  api.post(`/access/unblock/${studentId}`, data);
+export const getBlockedStudentsApi = (params) => api.get('/access/blocked', { params });
+export const getAccessLogsApi = (studentId) => api.get(`/access/log/${studentId}`);
+
 export default api;
