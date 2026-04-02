@@ -27,6 +27,10 @@ const studentSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
     },
+    phone: {
+      type: String,
+      trim: true,
+    },
     parentEmail: {
       type: String,
       trim: true,
@@ -125,6 +129,16 @@ const studentSchema = new mongoose.Schema(
     unblockedAt: {
       type: Date,
       default: null,
+    },
+    address: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    bloodGroup: {
+      type: String,
+      trim: true,
+      default: '',
     },
     photoUrl: {
       type: String,

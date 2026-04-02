@@ -44,9 +44,39 @@ Then run: `npm run seed`
 
 ## 📝 Student Exit Request Page
 
-### Public Access (No Login Required)
+### Public Access (Login Required as of [DATE])
 
 **URL:** `/student/exit-request`
+
+**Authentication:** 
+- Username: Student's Full Name (e.g., "Rohan Gupta")
+- Password: Student's Phone Number (e.g., "9876543212")
+- Access: Only for HOSTELLERS (day scholars cannot login)
+
+**Test Credentials (Hosteller Students):**
+
+| Name | Phone | SAP ID | Hostel |
+|------|-------|--------|--------|
+| Rohan Gupta | 9876543212 | 500091003 | Boys Hostel A |
+| Aditya Verma | 9876543220 | 500091011 | Boys Hostel A |
+| Rahul Mehta | 9876543222 | 500091013 | Boys Hostel A |
+| Sneha Reddy | 9876543214 | 500091004 | Girls Hostel B |
+| Priya Sharma | 9876543215 | 500091005 | Girls Hostel B |
+| Kavya Rao | 9876543221 | 500091012 | Girls Hostel B |
+| Neha Desai | 9876543223 | 500091014 | Girls Hostel B |
+
+**Features:**
+- Login with name and phone
+- Submit exit requests
+- Track request status (pending/approved/rejected)
+- See hostel and warden details
+- Logout functionality
+
+### Public Dashboard (No Login)
+
+**URL:** `/live`
+
+**Purpose:** Real-time entry/exit monitoring display
 
 **Purpose:** Students can submit hostel exit requests for approval
 

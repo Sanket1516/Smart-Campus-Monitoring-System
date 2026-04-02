@@ -142,16 +142,44 @@ const notifyLateReturn = async (request, minutesLate) => {
   ]);
 };
 
+// POST /api/hosteller/student/login
+exports.studentLogin = async (req, res) => {
+  try {
+    // Student is already authenticated by middleware and attached to req.student
+    const student = req.student;
+
+    // Get latest request status
+    const latestRequest = await HostellerRequest.findOne({
+      student: student._id,
+    })
+      .sort({ createdAt: -1 })
+      .select('status reason requestedExitTime expectedReturnTime createdAt rejectionReason');
+
+    res.json({
+      success: true,
+      student: {
+        _id: student._id,
+        name: student.name,
+        sapId: student.sapId,
+        email: student.email,
+        phone: student.phone,
+        roomNumber: student.roomNumber,
+        hostel: student.hostel,
+      },
+      latestRequest,
+    });
+  } catch (error) {
+    console.error('Student login error:', error);
+    res.status(500).json({ message: 'Login failed' });
+  }
+};
+
 // POST /api/hosteller/request
 exports.createHostellerRequest = async (req, res) => {
   try {
-    const { sapId, reason, requestedExitTime, expectedReturnTime } = req.body;
-    const student = await Student.findOne({ sapId, isActive: true })
-      .populate({
-        path: 'hostel',
-        match: { isActive: true },
-        populate: { path: 'warden', select: 'name email phone role isActive' },
-      });
+    // Student is already authenticated by middleware
+    const student = req.student;
+    const { reason, requestedExitTime, expectedReturnTime } = req.body;
 
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });

@@ -29,9 +29,17 @@ const enrichHostel = async (hostel) => {
 };
 
 // GET /api/hostels
-exports.getHostels = async (_req, res) => {
+exports.getHostels = async (req, res) => {
   try {
-    const hostels = await Hostel.find({ isActive: true })
+    // Build query based on user role
+    let query = { isActive: true };
+    
+    // If warden, only show hostels they're assigned to
+    if (req.admin.role === 'warden') {
+      query.warden = req.admin._id;
+    }
+    
+    const hostels = await Hostel.find(query)
       .populate('warden', 'name username email phone role isActive')
       .populate('createdBy', 'name username role')
       .sort({ name: 1 });

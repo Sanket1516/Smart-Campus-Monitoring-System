@@ -12,6 +12,7 @@ export const ROUTE_PERMISSIONS = {
   '/logs': [ROLES.ADMIN, ROLES.WARDEN, ROLES.SECURITY],
   '/analytics': [ROLES.ADMIN, ROLES.WARDEN],
   '/hostellers': [ROLES.ADMIN, ROLES.WARDEN],
+  '/admin/students': [ROLES.ADMIN],
   '/admin/enrollment': [ROLES.ADMIN],
   '/admin/access-control': [ROLES.ADMIN],
   '/admin/warden-portal': [ROLES.ADMIN, ROLES.WARDEN],

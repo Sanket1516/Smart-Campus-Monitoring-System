@@ -367,6 +367,14 @@ Login as: admin / admin123
 6. Update any field (email, phone, parent contact, address, etc.)
 7. Click **Save** to update
 
+**Available Fields to Edit:**
+- Personal: Name, SAP ID, Email, Phone
+- Parent: Parent Email, Parent Phone
+- Academic: Course, Department, Year
+- Address: Full Address, Blood Group
+- Hostel: Hostel Assignment, Room Number (for hostellers)
+- System: Student Type (day_scholar/hosteller), Active Status
+
 ### Editing Staff/Admin Information
 1. Login as **admin** (admin/admin123)
 2. Go to **Settings** page
@@ -377,8 +385,67 @@ Login as: admin / admin123
 
 ### Editing Hostel Information
 1. Login as **admin** (admin/admin123)
-2. Go to **Enrollment** or use API
+2. Navigate to hostel management (via API or future UI)
 3. Update hostel warden, contact details, capacity, etc.
+
+---
+
+## ⚠️ Troubleshooting: "Student Not Found" Error
+
+If you get "Student not found" when searching by SAP ID:
+
+### Step 1: Verify Database Has Students
+
+Run this command in backend directory:
+```bash
+node utils/check-students.js
+```
+
+This will show:
+- How many students are in database
+- All student SAP IDs
+- Their details
+
+### Step 2: If No Students Found
+
+The seed script may have failed. Re-run it:
+```bash
+npm run seed
+```
+
+Look for the success message:
+```
+✅ Seed completed successfully!
+  Students: 14
+  Admins: 3
+  Hostels: 2
+  Entry logs: 70-80
+```
+
+### Step 3: Verify Student SAP IDs
+
+The following SAP IDs should work after successful seed:
+- `70552300067` - Sanket Kumar (Day Scholar)
+- `500091001` - Aarav Sharma (Day Scholar)  
+- `500091002` - Priya Patel (Day Scholar)
+- `500091003` - Rohan Gupta (Boy Hosteller) ⭐
+- `500091004` - Sneha Reddy (Girl Hosteller) ⭐
+- `500091005` - Vikram Singh (Day Scholar)
+- `500091006` - Ananya Iyer (Girl Hosteller)
+- `500091007` - Karthik Nair (Day Scholar)
+- `500091008` - Meera Joshi (Girl Hosteller) ⭐
+- `500091009` - Arjun Desai (Day Scholar)
+- `500091010` - Divya Kulkarni (Day Scholar)
+- `500091011` - Aditya Verma (Boy Hosteller)
+- `500091012` - Ishita Shah (Girl Hosteller)
+- `500091013` - Rahul Mehta (Boy Hosteller)
+
+### Step 4: Check Admin Panel
+
+1. Login as admin: `admin` / `admin123`
+2. Go to **Enrollment** page
+3. You should see all 14 students listed
+4. If list is empty → seed script didn't complete
 
 ---
 

@@ -16,6 +16,7 @@ import AccessControl from './pages/AccessControl';
 import WardenPortal from './pages/WardenPortal';
 import StudentExitRequest from './pages/StudentExitRequest';
 import PublicLiveDashboard from './pages/PublicLiveDashboard';
+import StudentManagement from './pages/StudentManagement';
 import { ROLES } from './utils/rolePermissions';
 
 function PrivateRoute({ children }) {
@@ -64,6 +65,11 @@ export default function App() {
           <Route path="hostellers" element={
             <RoleRoute path="/hostellers">
               <Hostellers />
+            </RoleRoute>
+          } />
+          <Route path="admin/students" element={
+            <RoleRoute path="/admin/students" requiredRoles={[ROLES.ADMIN]}>
+              <StudentManagement />
             </RoleRoute>
           } />
           <Route path="admin/enrollment" element={

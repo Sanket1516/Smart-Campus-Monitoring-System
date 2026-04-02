@@ -37,7 +37,7 @@ const hostelValidators = [
   handleValidation,
 ];
 
-router.get('/', protect, authorize('admin'), getHostels);
+router.get('/', protect, authorize('admin', 'warden'), getHostels);
 router.get(
   '/:id',
   protect,

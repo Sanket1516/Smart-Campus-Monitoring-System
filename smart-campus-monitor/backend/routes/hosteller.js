@@ -9,11 +9,24 @@ const {
   getStudentHostellerHistory,
   getHostelHostellerRequests,
   getPublicStudentRequestStatus,
+  studentLogin,
 } = require('../controllers/hostellerController');
 const { protect, authorize } = require('../middleware/auth');
+const { authenticateStudent } = require('../middleware/studentAuth');
 const handleValidation = require('../middleware/validate');
 
 const router = express.Router();
+
+router.post(
+  '/student/login',
+  [
+    body('username').trim().notEmpty().withMessage('Name is required'),
+    body('password').trim().notEmpty().withMessage('Phone number is required'),
+    handleValidation,
+    authenticateStudent,
+  ],
+  studentLogin
+);
 
 router.get(
   '/public/:sapId',
@@ -24,11 +37,13 @@ router.get(
 router.post(
   '/request',
   [
-    body('sapId').trim().notEmpty().withMessage('SAP ID is required'),
+    body('username').trim().notEmpty().withMessage('Name is required'),
+    body('password').trim().notEmpty().withMessage('Phone number is required'),
     body('reason').trim().notEmpty().withMessage('Reason is required'),
     body('requestedExitTime').optional({ values: 'falsy' }).isISO8601().withMessage('Requested exit time must be valid'),
     body('expectedReturnTime').isISO8601().withMessage('Expected return time must be valid'),
     handleValidation,
+    authenticateStudent,
   ],
   createHostellerRequest
 );

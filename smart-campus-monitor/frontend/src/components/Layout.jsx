@@ -15,6 +15,7 @@ import {
   HiOutlineX,
   HiOutlineMoon,
   HiOutlineSun,
+  HiOutlineUsers,
 } from 'react-icons/hi';
 import { useEffect, useState, useMemo } from 'react';
 import AlertBell from './AlertBell';
@@ -28,6 +29,7 @@ const navItems = [
   { to: '/logs', icon: HiOutlineClipboardList, label: 'Entry Logs' },
   { to: '/analytics', icon: HiOutlineChartBar, label: 'Analytics' },
   { to: '/hostellers', icon: HiOutlineUserGroup, label: 'Hostellers' },
+  { to: '/admin/students', icon: HiOutlineUsers, label: 'Student Management' },
   { to: '/admin/enrollment', icon: HiOutlineBadgeCheck, label: 'Enrollment' },
   { to: '/admin/access-control', icon: HiOutlineShieldExclamation, label: 'Access Control' },
   { to: '/admin/warden-portal', icon: HiOutlineClipboardList, label: 'Warden Portal' },
@@ -78,7 +80,7 @@ export default function Layout() {
       </div>
 
       {/* Nav links */}
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {filteredNavItems.map((item) => (
           <NavLink
             key={item.to}

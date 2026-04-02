@@ -313,7 +313,22 @@ const seed = async () => {
         isHosteller: false,
       };
     });
-    await Student.insertMany(studentsWithHostels);
+    
+    console.log(`  Attempting to insert ${studentsWithHostels.length} students...`);
+    try {
+      const insertedStudents = await Student.insertMany(studentsWithHostels);
+      console.log(`  ✅ Successfully inserted ${insertedStudents.length} students`);
+    } catch (studentError) {
+      console.error('\n❌ Failed to insert students!');
+      console.error('Error:', studentError.message);
+      if (studentError.errors) {
+        console.error('Validation errors:');
+        Object.keys(studentError.errors).forEach(key => {
+          console.error(`  - ${key}: ${studentError.errors[key].message}`);
+        });
+      }
+      throw studentError; // Re-throw to stop the seed
+    }
 
     // Generate sample entry logs for the past 7 days
     console.log('Seeding entry logs...');
@@ -380,7 +395,11 @@ const seed = async () => {
     ]);
 
     console.log('Seed completed successfully!');
-    console.log(`  Students: ${students.length}`);
+    
+    // Verify what was actually inserted
+    const finalCount = await Student.countDocuments();
+    console.log(`\n📊 Final Database Counts:`);
+    console.log(`  Students in DB: ${finalCount}`);
     console.log(`  Admins: ${admins.length}`);
     console.log(`  Hostels: ${createdHostels.length}`);
     console.log(`  Entry logs: ${logs.length}`);
@@ -400,7 +419,14 @@ const seed = async () => {
 
     process.exit(0);
   } catch (err) {
-    console.error('Seed error:', err);
+    console.error('\n❌ Seed error:', err.message);
+    if (err.errors) {
+      console.error('\n📋 Validation errors:');
+      Object.keys(err.errors).forEach(key => {
+        console.error(`  - ${key}: ${err.errors[key].message}`);
+      });
+    }
+    console.error('\n💡 Full error details:', err);
     process.exit(1);
   }
 };

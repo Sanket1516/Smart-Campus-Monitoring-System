@@ -23,8 +23,63 @@ const shiftDateStr = (dateStr, offsetDays) => {
 exports.getDashboardStats = async (req, res) => {
   try {
     const selectedDate = req.query.date || todayStr();
-    const hostelId = req.query.hostelId || '';
+    let hostelId = req.query.hostelId || '';
     const weekStart = shiftDateStr(selectedDate, -6);
+
+    // If user is a warden, they can only see their assigned hostels
+    let wardenHostelIds = [];
+    if (req.admin.role === 'warden') {
+      const Hostel = require('../models/Hostel');
+      const wardenHostels = await Hostel.find({
+        warden: req.admin._id,
+        isActive: true,
+      }).select('_id');
+      wardenHostelIds = wardenHostels.map(h => h._id);
+      
+      // If no hostels assigned, return empty data
+      if (wardenHostelIds.length === 0) {
+        return res.json({
+          todayStats: {
+            totalScans: 0,
+            uniqueEntries: 0,
+            currentlyInside: 0,
+            enteredToday: 0,
+            exitedToday: 0,
+            unauthorizedAttempts: 0,
+            blockedAttemptsToday: 0,
+            hostellersOutside: 0,
+            lateReturns: 0,
+            activeHostellerApprovals: 0,
+          },
+          weeklyTrend: [],
+          gateActivity: [],
+          hostelMovement: [],
+          recentActivity: [],
+          activeApprovals: [],
+        });
+      }
+      
+      // If warden hasn't selected a specific hostel, use first assigned hostel
+      if (!hostelId) {
+        hostelId = String(wardenHostelIds[0]);
+      }
+      
+      // Verify warden has access to the requested hostel
+      if (hostelId && !wardenHostelIds.some(id => String(id) === hostelId)) {
+        return res.status(403).json({ message: 'You do not have access to this hostel' });
+      }
+    }
+
+    // Build student filter based on role and hostel selection
+    let studentFilter = { isActive: true };
+    if (req.admin.role === 'warden') {
+      // Warden sees only students from their assigned hostels
+      if (hostelId) {
+        studentFilter.hostel = hostelId;
+      } else if (wardenHostelIds.length > 0) {
+        studentFilter.hostel = { $in: wardenHostelIds };
+      }
+    }
 
     // Run all queries in parallel
     const [
@@ -36,7 +91,7 @@ exports.getDashboardStats = async (req, res) => {
       activeApprovalsRaw,
       unauthorizedFeed,
     ] = await Promise.all([
-      Student.find({ isActive: true })
+      Student.find(studentFilter)
         .select(
           'sapId name category department year course hostel studentType isHosteller roomNumber photoUrl'
         )

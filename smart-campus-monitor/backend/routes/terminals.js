@@ -61,7 +61,7 @@ const terminalUpdateValidators = [
 ];
 
 router.get('/', protect, authorize('admin', 'security'), getTerminals);
-router.get('/status', protect, authorize('admin', 'security'), getTerminalStatus);
+router.get('/status', protect, authorize('admin', 'security', 'warden'), getTerminalStatus);
 router.get(
   '/:machineNumber/logs',
   protect,
