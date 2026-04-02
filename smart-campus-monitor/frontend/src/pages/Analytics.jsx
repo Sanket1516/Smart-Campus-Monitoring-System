@@ -41,8 +41,8 @@ export default function Analytics() {
       setError(null);
       try {
         const [dashRes, hourlyRes] = await Promise.all([
-          getDashboardApi(selectedDate),
-          getHourlyApi(selectedDate),
+          getDashboardApi({ date: selectedDate }),
+          getHourlyApi({ date: selectedDate }),
         ]);
         
         if (!dashRes.data) {
@@ -165,6 +165,7 @@ export default function Analytics() {
   const dayScholarCount = Number(stats.totalDayScholars) || 0;
   const hostellerCount = Number(stats.totalHostellers) || 0;
   const totalStudents = Number(stats.totalStudents) || 0;
+  const weeklyTrend = Array.isArray(stats.weeklyTrend) ? stats.weeklyTrend : [];
 
   // Category breakdown doughnut
   const categoryData = {
@@ -200,14 +201,14 @@ export default function Analytics() {
 
   // Weekly trend
   const weeklyChart = {
-    labels: stats.weeklyTrend.map((d) => {
+    labels: weeklyTrend.map((d) => {
       const date = new Date(d.date + 'T00:00:00');
       return date.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
     }),
     datasets: [
       {
         label: 'Unique Students',
-        data: stats.weeklyTrend.map((d) => d.uniqueStudents),
+        data: weeklyTrend.map((d) => d.uniqueStudents || 0),
         borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.15)',
         fill: true,
@@ -216,7 +217,7 @@ export default function Analytics() {
       },
       {
         label: 'Total Scans',
-        data: stats.weeklyTrend.map((d) => d.entries),
+        data: weeklyTrend.map((d) => d.entries || 0),
         borderColor: 'rgb(16, 185, 129)',
         backgroundColor: 'rgba(16, 185, 129, 0.15)',
         fill: true,
