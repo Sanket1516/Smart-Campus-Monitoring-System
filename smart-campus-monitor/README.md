@@ -1,6 +1,6 @@
 # Smart Campus Entry Monitoring System
 
-A full-stack web application for real-time monitoring of student entry and exit at a college campus gate. Built with the MERN stack, the system uses webcam-based barcode scanning to identify students, automatically toggles between entry and exit states, tracks day scholars and hostellers separately, detects curfew violations, sends parent notifications via email and SMS, and provides an admin dashboard with rich analytics.
+A full-stack web application for real-time monitoring of student entry and exit at a college campus gate. Built with the MERN stack, the system supports biometric terminal-based access events as a primary automated channel and SAP ID based manual entry as an operational fallback, automatically toggles between entry and exit states, tracks day scholars and hostellers separately, detects curfew violations, supports hosteller exit-request approvals, enables student enrollment via Excel upload, sends parent notifications via email and SMS, and provides role-aware dashboards with rich analytics.
 
 > **Academic Project** -- 3rd Year, B.E. Computer Science Engineering
 
@@ -62,8 +62,8 @@ npm run dev
 |                          CLIENT  (Browser)                          |
 |                                                                     |
 |   +------------------+    +-------------------+    +--------------+ |
-|   | React (Vite)     |    | html5-qrcode      |    | Chart.js     | |
-|   | React Router DOM |    | Scanner (Webcam)  |    | Analytics    | |
+|   | React (Vite)     |    | Manual SAP Input  |    | Chart.js     | |
+|   | React Router DOM |    | Live Gate Control |    | Analytics    | |
 |   | Tailwind CSS     |    |                   |    |              | |
 |   | Axios HTTP       |    |                   |    |              | |
 |   +--------+---------+    +--------+----------+    +------+-------+ |
@@ -115,6 +115,8 @@ npm run dev
 | Morgan             | HTTP request logging (dev mode)            |
 | express-validator  | Request body validation                    |
 | dotenv             | Environment variable management            |
+| socket.io          | Real-time event broadcasting from backend  |
+| node-zklib         | Biometric terminal integration support     |
 
 ### Frontend
 
@@ -125,12 +127,11 @@ npm run dev
 | React Router DOM 6 | Client-side routing with protected routes  |
 | Tailwind CSS 3     | Utility-first CSS framework                |
 | Axios              | HTTP client with interceptors              |
-| html5-qrcode       | Real-time barcode scanning from webcam     |
-| Tesseract.js 5     | OCR engine for reading printed SAP IDs     |
 | Chart.js 4         | Bar, Line, and Doughnut chart rendering    |
 | react-chartjs-2    | React wrapper for Chart.js                 |
 | react-hot-toast    | Toast notification popups                  |
 | react-icons        | Icon library (Heroicons outline set)       |
+| socket.io-client   | Live updates for alerts, ticker, and status |
 
 ---
 
@@ -138,20 +139,33 @@ npm run dev
 
 ### Core Functionality
 
-- **Webcam Barcode Scanning** -- Live camera feed decodes student ID card barcodes using the html5-qrcode webcam reader. A scan-target overlay guides the user to position the barcode within the frame.
-- **OCR Number Reader** -- Alternative scanning mode using Tesseract.js OCR engine. Automatically detects the teal-colored strip on the college ID card, extracts the 11-digit SAP ID printed on it, and processes the scan. Auto-scans every 2 seconds with a manual capture button as fallback.
-- **Manual SAP ID Entry** -- Fallback text input for manual entry when barcode scanning is not possible.
-- **Smart Entry/Exit Toggle** -- The system automatically determines whether a scan is an entry or exit based on the student's current state for the day:
+- **Biometric Terminal Processing** -- Fingerprint devices submit scan events to the backend using authenticated terminal payloads (`deviceSN`, `machineNumber`, `userId`) for real-time entry/exit decisions.
+- **SAP ID Manual Entry Workflow** -- Gate staff records student movement by entering SAP ID in the scanning dashboard. This is the supported manual fallback/override flow alongside biometric terminal ingestion.
+- **Entry and Exit Logging from One Dashboard** -- The same scanning dashboard handles both entry and exit actions by evaluating each student's latest state.
+- **Smart Entry/Exit Toggle** -- The system automatically determines whether an SAP ID action is an entry or exit based on the student's current state for the day:
   - No log today --> **ENTRY**
   - Currently status `entered` --> **EXIT**
   - Currently status `exited` --> **RE-ENTRY** (new log)
-- **Unauthorized Scan Detection** -- Scanned values not matching any active student SAP ID are logged as unauthorized attempts with timestamp and date.
+- **Unauthorized Attempt Detection** -- SAP IDs not matching any active student record are logged as unauthorized attempts with timestamp and date.
+- **Visitor Entry Capture** -- Security can also register visitor entries from the same operational page with identity and meeting details.
+
+### Biometric Access and Terminal Operations
+
+- **Terminal Authentication** -- Every biometric event is validated against registered terminal identity (`machineNumber` + `deviceSN`) before access is considered.
+- **Live Terminal Health (Heartbeat)** -- Devices post heartbeat updates to keep terminal online/offline status current in the admin terminal dashboard.
+- **Blocked Student Enforcement** -- Blocked students are denied biometric access, logged in access-control audit trails, and surfaced in alert feeds.
+- **Warden Approval Enforcement for Hostellers** -- For students requiring warden authorization, biometric exit/entry is gated by approved and active request windows.
+- **Enrollment Station Mode** -- Dedicated enrollment terminals are recognized separately and excluded from gate-movement logging.
+- **Real-time Security Events** -- Authorized scans, unauthorized attempts, blocked attempts, warden-required events, and terminal online events are broadcast live via sockets.
 
 ### Student Management
 
 - **Day Scholar / Hosteller Classification** -- Every student record has a `category` field distinguishing between day scholars and hostellers.
 - **CRUD Operations** -- Admin users can create, read, update, and soft-delete (deactivate) student records.
 - **Search and Filter** -- Students can be searched by name or SAP ID and filtered by category.
+- **Excel Enrollment Upload** -- Admin can bulk upload students via `.xlsx/.xls` with automatic extraction, row-wise validation, category normalization, and database insertion.
+- **Resilient Bulk Insert** -- Valid rows are inserted even when some rows fail; upload results include success count, failure count, and row-level error reasons.
+- **Category-aware Field Mapping** -- Upload processing automatically assigns hosteller/day scholar defaults (including hostel and approval-related fields) based on the submitted category.
 
 ### Hosteller Monitoring
 
@@ -181,9 +195,10 @@ npm run dev
 ### Authentication and Authorization
 
 - **JWT Authentication** -- Login returns a signed Bearer token stored in `localStorage`.
-- **Role-based Access Control** -- Two roles: `admin` (full access) and `security` (scan and view access). Only admins can create/update/delete students and register new users.
+- **Role-based Access Control** -- Multiple roles are supported, including `admin`, `security`, and `warden`, each with feature-level route permissions.
 - **Token Validation Middleware** -- All API routes except login are protected. Invalid/expired tokens trigger a 401 and automatic redirect to login.
 - **Global 401 Interceptor** -- Axios response interceptor clears stored credentials and redirects to `/login` on any 401 response.
+- **Dedicated Student Authentication Flow** -- Hosteller request APIs support student-side authentication for creating and tracking exit requests.
 
 ### Security
 
@@ -200,6 +215,33 @@ npm run dev
 - **Processing Cooldown** -- 2-second debounce between scans to prevent duplicate processing.
 - **Loading States** -- Animated spinners during data fetching.
 - **Paginated Tables** -- Entry logs and student lists support server-side pagination.
+- **Role-aware Navigation** -- Sidebar links are filtered dynamically based on authenticated user role.
+- **Real-time Status Banner and Ticker** -- Socket-powered indicators show connection status and live event updates.
+
+### Web Pages and Modules
+
+- **Login Page (`/login`)** -- Authenticates staff users and issues role-based access to protected modules.
+- **Dashboard (`/dashboard`)** -- Primary operational overview with counts, trend snapshots, and current campus occupancy.
+- **Gate Scanner (`/scanner`)** -- SAP ID manual entry page for recording entry/exit and handling unauthorized attempts; also includes visitor entry capture and complements biometric terminal operations.
+- **Entry Logs (`/logs`)** -- Filterable and paginated movement history with unauthorized log review workflow.
+- **Analytics (`/analytics`)** -- Historical and comparative visual analytics for movement, occupancy, and category split.
+- **Hostellers (`/hostellers`)** -- Monitors hostel students, active/late states, and operational hostel status.
+- **Student Management (`/admin/students`)** -- Full student lifecycle management, including manual create/update and Excel bulk enrollment upload.
+- **Enrollment (`/admin/enrollment`)** -- Enrollment lifecycle management and student-type mapping controls.
+- **Access Control (`/admin/access-control`)** -- Block/unblock operations with reasons and per-student access audit logs.
+- **Warden Portal (`/admin/warden-portal`)** -- Reviews and acts on hosteller exit requests with approval/rejection actions.
+- **Terminals (`/admin/terminals`)** -- Biometric terminal registration, assignment, health/status visibility, per-terminal activity, and configuration management.
+- **Settings (`/admin/settings`)** -- System-level settings management, including security and operational configuration.
+- **Public Live Dashboard (`/live`)** -- Public-facing, read-only live campus status view.
+- **Student Exit Request (`/student/exit-request`)** -- Student-facing page to authenticate and submit hosteller exit requests.
+
+### Page Flow (Operational)
+
+- **Staff flow** -- Login -> Dashboard -> Gate Scanner (SAP ID entry) -> Entry Logs / Analytics -> module-specific admin pages.
+- **Admin flow** -- Login -> Student Management (manual or Excel upload) -> Enrollment / Access Control / Terminals / Settings.
+- **Warden flow** -- Login -> Warden Portal -> approve/reject requests -> Hostellers dashboard review.
+- **Student flow** -- Student Exit Request page -> request submission -> status checks via public/student endpoints -> approved movement reflected in logs.
+- **Biometric device flow** -- Fingerprint terminal scan -> `/api/fingerprint/scan` validation -> entry/exit decision -> log/alert/socket updates -> optional parent notification.
 
 ---
 
@@ -257,9 +299,9 @@ npm run dev
 
 | Field          | Type    | Constraints            | Description                              |
 | -------------- | ------- | ---------------------- | ---------------------------------------- |
-| `scannedValue` | String  | required               | The unrecognized barcode value           |
+| `scannedValue` | String  | required               | The unrecognized SAP ID input            |
 | `date`         | String  | required (YYYY-MM-DD)  | Calendar date of the attempt             |
-| `timestamp`    | Date    | default: Date.now      | Exact timestamp of the scan              |
+| `timestamp`    | Date    | default: Date.now      | Exact timestamp of the SAP ID attempt    |
 | `resolved`     | Boolean | default: false         | Whether admin has reviewed this incident |
 | `notes`        | String  | default: `""`          | Admin notes upon resolution              |
 | `createdAt`    | Date    | auto (timestamps)      | Record creation timestamp                |
@@ -277,13 +319,18 @@ All endpoints are prefixed with `/api`. Endpoints marked with a lock require a v
 | ------ | -------------------- | ---------- | -------------------------------------------- |
 | POST   | `/api/auth/login`    | Public     | Login with username/password; returns JWT     |
 | GET    | `/api/auth/me`       | Protected  | Get current authenticated user profile        |
-| POST   | `/api/auth/register` | Admin only | Register a new admin or security user         |
+| POST   | `/api/auth/register` | Admin only | Register a new staff user (admin/security/warden) |
+| GET    | `/api/auth/staff`    | Admin only | List staff users and roles                     |
+| PUT    | `/api/auth/staff/:id`| Admin only | Update staff profile/role                      |
+| DELETE | `/api/auth/staff/:id`| Admin only | Remove/deactivate a staff user                 |
 
 ### Scan Processing
 
 | Method | Endpoint     | Auth      | Description                                                     |
 | ------ | ------------ | --------- | --------------------------------------------------------------- |
-| POST   | `/api/scan`  | Protected | Process a barcode scan; auto-detects entry/exit/re-entry        |
+| POST   | `/api/scan`  | Protected | Process SAP ID manual entry; auto-detects entry/exit/re-entry   |
+| POST   | `/api/fingerprint/scan` | Device/API | Process biometric terminal scan with terminal authentication and policy checks |
+| POST   | `/api/fingerprint/heartbeat` | Device/API | Update terminal liveness and last-seen status |
 
 **Request Body:** `{ "sapId": "500091001" }`
 **Success Response:** `{ authorized, action, student, log }`
@@ -296,6 +343,7 @@ All endpoints are prefixed with `/api`. Endpoints marked with a lock require a v
 | GET    | `/api/students`         | Protected  | List students (supports `?category`, `?search`, `?page`, `?limit`) |
 | GET    | `/api/students/:sapId`  | Protected  | Get a single student by SAP ID              |
 | POST   | `/api/students`         | Admin only | Create a new student record                 |
+| POST   | `/api/students/upload`  | Admin only | Bulk upload students via Excel (`.xlsx/.xls`) |
 | PUT    | `/api/students/:sapId`  | Admin only | Update a student record                     |
 | DELETE | `/api/students/:sapId`  | Admin only | Soft-delete (deactivate) a student          |
 
@@ -322,6 +370,96 @@ All endpoints are prefixed with `/api`. Endpoints marked with a lock require a v
 | POST   | `/api/notify`  | Protected | Manually trigger parent notification for a student   |
 
 **Request Body:** `{ "sapId": "500091001", "action": "entry" }`
+
+### Visitors
+
+| Method | Endpoint        | Auth      | Description                                     |
+| ------ | --------------- | --------- | ----------------------------------------------- |
+| GET    | `/api/visitors` | Protected | List recent visitor entries                      |
+| POST   | `/api/visitors` | Protected | Record a visitor entry from gate operations      |
+
+### Enrollment
+
+| Method | Endpoint                                 | Auth       | Description                                  |
+| ------ | ---------------------------------------- | ---------- | -------------------------------------------- |
+| POST   | `/api/enrollment/initiate/:studentId`    | Admin only | Start enrollment workflow for a student       |
+| POST   | `/api/enrollment/confirm/:studentId`     | Admin only | Confirm enrollment with student type details  |
+| PUT    | `/api/enrollment/update-type/:studentId` | Admin only | Update hosteller/day scholar mapping          |
+| GET    | `/api/enrollment/stats`                  | Admin only | Enrollment statistics summary                  |
+
+### Access Control
+
+| Method | Endpoint                           | Auth                  | Description                              |
+| ------ | ---------------------------------- | --------------------- | ---------------------------------------- |
+| POST   | `/api/access/block/:studentId`     | Admin only            | Block student access with reason         |
+| POST   | `/api/access/unblock/:studentId`   | Admin only            | Unblock student access with reason       |
+| GET    | `/api/access/blocked`              | Admin, Security       | List blocked students                    |
+| GET    | `/api/access/log/:studentId`       | Admin, Security       | Get access-control audit trail           |
+
+### Hosteller Exit Requests
+
+| Method | Endpoint                               | Auth                 | Description                                      |
+| ------ | -------------------------------------- | -------------------- | ------------------------------------------------ |
+| POST   | `/api/hosteller/student/login`         | Public (student auth)| Student login for request workflows              |
+| POST   | `/api/hosteller/request`               | Public (student auth)| Create hosteller exit request                    |
+| GET    | `/api/hosteller/public/:sapId`         | Public               | Public request status lookup by SAP ID           |
+| GET    | `/api/hosteller/requests`              | Admin, Warden        | List all requests                                |
+| POST   | `/api/hosteller/approve/:requestId`    | Admin, Warden        | Approve request                                  |
+| POST   | `/api/hosteller/reject/:requestId`     | Admin, Warden        | Reject request with reason                       |
+| GET    | `/api/hosteller/active`                | Admin, Warden        | List active approved requests                    |
+| GET    | `/api/hosteller/history/:studentId`    | Admin, Warden        | Student request history                           |
+| GET    | `/api/hosteller/hostel/:hostelId`      | Admin, Warden        | Hostel-wise request view                          |
+
+### Hostels
+
+| Method | Endpoint                       | Auth          | Description                              |
+| ------ | ------------------------------ | ------------- | ---------------------------------------- |
+| GET    | `/api/hostels`                 | Admin, Warden | List hostels                              |
+| GET    | `/api/hostels/:hostelId`       | Admin, Warden | Get hostel details                        |
+| GET    | `/api/hostels/:hostelId/rooms` | Admin, Warden | Get room-level summary                    |
+| POST   | `/api/hostels`                 | Admin only    | Create hostel                             |
+| PUT    | `/api/hostels/:hostelId`       | Admin only    | Update hostel                             |
+| DELETE | `/api/hostels/:hostelId`       | Admin only    | Delete hostel                             |
+
+### Terminals
+
+| Method | Endpoint                                  | Auth                   | Description                                   |
+| ------ | ----------------------------------------- | ---------------------- | --------------------------------------------- |
+| GET    | `/api/terminals`                          | Admin, Security        | List terminal configurations                   |
+| GET    | `/api/terminals/status`                   | Admin, Security, Warden| Live terminal status and heartbeat insights    |
+| GET    | `/api/terminals/:terminalId`              | Admin, Security        | Get terminal details                           |
+| POST   | `/api/terminals`                          | Admin only             | Register a terminal                            |
+| PUT    | `/api/terminals/:terminalId`              | Admin only             | Update terminal config                         |
+| DELETE | `/api/terminals/:terminalId`              | Admin only             | Remove terminal                                |
+
+### Alerts
+
+| Method | Endpoint            | Auth                     | Description                              |
+| ------ | ------------------- | ------------------------ | ---------------------------------------- |
+| GET    | `/api/alerts`       | Admin, Warden, Security  | List alert feed                           |
+| POST   | `/api/alerts`       | Admin, Warden, Security  | Create/raise operational alert            |
+
+### Fingerprint Device Integration
+
+| Method | Endpoint                     | Auth      | Description                                  |
+| ------ | ---------------------------- | --------- | -------------------------------------------- |
+| POST   | `/api/fingerprint/scan`      | Device/API| Ingest fingerprint events, validate terminal identity, enforce access rules, and trigger live updates |
+| POST   | `/api/fingerprint/heartbeat` | Device/API| Ingest terminal heartbeat and maintain online/offline telemetry |
+
+### Live Public Data
+
+| Method | Endpoint       | Auth   | Description                                 |
+| ------ | -------------- | ------ | ------------------------------------------- |
+| GET    | `/api/live`    | Public | Public live dashboard payload               |
+
+### System Settings
+
+| Method | Endpoint                      | Auth        | Description                                  |
+| ------ | ----------------------------- | ----------- | -------------------------------------------- |
+| GET    | `/api/settings`               | Admin only  | Get configurable system settings              |
+| POST   | `/api/settings`               | Admin only  | Create/update settings set                    |
+| GET    | `/api/settings/security`      | Admin only  | Get security policy settings                  |
+| PUT    | `/api/settings/security`      | Admin only  | Update security policy settings               |
 
 ### Utility
 
@@ -356,13 +494,19 @@ smart-campus-monitor/
 |   |   +-- Student.js            # Student schema
 |   |   +-- EntryLog.js           # Entry/exit log schema
 |   |   +-- UnauthorizedLog.js    # Unauthorized scan log schema
+|   |   +-- HostellerRequest.js   # Hosteller exit request schema
+|   |   +-- TerminalConfig.js     # Terminal configuration schema
+|   |   +-- AccessControlLog.js   # Access block/unblock audit schema
 |   |
 |   +-- controllers/
 |   |   +-- authController.js     # Login, register, getMe
-|   |   +-- scanController.js     # Barcode scan processing logic
+|   |   +-- scanController.js     # SAP ID entry/exit processing logic
 |   |   +-- studentController.js  # Student CRUD operations
 |   |   +-- logController.js      # Entry log and unauthorized log queries
 |   |   +-- dashboardController.js # Dashboard aggregation queries
+|   |   +-- enrollmentController.js # Enrollment workflow
+|   |   +-- accessController.js   # Access control operations
+|   |   +-- hostellerController.js # Exit request workflow
 |   |
 |   +-- routes/
 |   |   +-- auth.js               # /api/auth routes
@@ -371,6 +515,14 @@ smart-campus-monitor/
 |   |   +-- logs.js               # /api/logs routes
 |   |   +-- dashboard.js          # /api/dashboard routes
 |   |   +-- notify.js             # /api/notify routes
+|   |   +-- enrollment.js         # /api/enrollment routes
+|   |   +-- access.js             # /api/access routes
+|   |   +-- hosteller.js          # /api/hosteller routes
+|   |   +-- terminals.js          # /api/terminals routes
+|   |   +-- hostels.js            # /api/hostels routes
+|   |   +-- visitors.js           # /api/visitors routes
+|   |   +-- live.js               # /api/live routes
+|   |   +-- settings.js           # /api/settings routes
 |   |
 |   +-- services/
 |   |   +-- notification.js       # Email (Nodemailer) + SMS (Fast2SMS)
@@ -398,16 +550,25 @@ smart-campus-monitor/
         |
         +-- components/
         |   +-- Layout.jsx        # Sidebar + top bar + Outlet
-        |   +-- BarcodeScanner.jsx # html5-qrcode webcam barcode reader
+        |   +-- ExcelUploadModal.jsx # Bulk enrollment upload modal
+        |   +-- LiveScanTicker.jsx # Live bottom ticker for recent activity
+        |   +-- AlertBell.jsx     # Alert center shortcut
         |   +-- StatCard.jsx      # Reusable statistic card
         |
         +-- pages/
             +-- Login.jsx         # Login page
             +-- Dashboard.jsx     # Dashboard with stat cards and charts
-            +-- Scanner.jsx       # Gate scanner with webcam + manual input
+            +-- Scanner.jsx       # Gate scanner with SAP ID manual input
             +-- StudentLogs.jsx   # Paginated entry/exit log table
             +-- Analytics.jsx     # Analytics charts (doughnut, bar, line)
             +-- Hostellers.jsx    # Hosteller monitoring table
+            +-- StudentManagement.jsx # Student CRUD + Excel upload
+            +-- Enrollment.jsx    # Enrollment workflow dashboard
+            +-- AccessControl.jsx # Block/unblock and access history
+            +-- WardenPortal.jsx  # Hosteller request approvals
+            +-- Terminals.jsx     # Terminal management and status
+            +-- PublicLiveDashboard.jsx # Public live status view
+            +-- StudentExitRequest.jsx # Student-facing exit request form
             +-- Settings.jsx      # Application settings page
 ```
 
@@ -420,7 +581,7 @@ smart-campus-monitor/
 - **Node.js** >= 18.x ([https://nodejs.org](https://nodejs.org))
 - **MongoDB** >= 6.x running locally or a MongoDB Atlas connection URI
 - **Git** (optional, for cloning)
-- A modern web browser with webcam access (Chrome, Edge, or Firefox recommended)
+- A modern web browser (Chrome, Edge, or Firefox recommended)
 
 ### Step 1 -- Clone the Repository
 
@@ -476,7 +637,7 @@ This will:
 - Insert 10 sample students (SAP IDs 500091001 -- 500091010)
 - Create 2 admin/security users
 - Generate ~7 days of sample entry/exit logs
-- Insert 2 unauthorized scan log entries
+- Insert 2 unauthorized SAP ID attempt log entries
 
 ### Step 6 -- Start the Backend Server
 
@@ -609,7 +770,9 @@ npm run seed
                           +-------------------------------+
                           |                               |
     +----------+          |   +------------------------+  |
-    | Security |----------+-->| Scan Student Barcode   |  |
+    | Security |----------+-->| Enter Student SAP ID   |  |
+    |          |----------+-->| Monitor Fingerprint    |  |
+    |          |          |   | Terminal Activity      |  |
     | Guard    |          |   +------------------------+  |
     |          |----------+-->| View Scan Result       |  |
     |          |          |   +------------------------+  |
@@ -660,8 +823,8 @@ npm run seed
 
 ```
                     +------------------+
-                    | Barcode Scanned  |
-                    | (or Manual Entry)|
+                    | SAP ID Submitted |
+                    | (Manual Entry)   |
                     +--------+---------+
                              |
                              v
@@ -745,6 +908,57 @@ npm run seed
                    | { authorized: true,       |
                    |   action, student, log }  |
                    +---------------------------+
+
+Biometric Terminal Flow (Primary Automated Path):
+
+                    +-----------------------------+
+                    | Fingerprint Terminal Event  |
+                    | {deviceSN,machine,userId}   |
+                    +-------------+---------------+
+                                  |
+                                  v
+                  +-------------------------------------+
+                  | POST /api/fingerprint/scan          |
+                  | Validate terminal identity          |
+                  +----------------+--------------------+
+                                   |
+                      +------------+------------+
+                      |                         |
+                      v                         v
+            +-------------------+      +-------------------+
+            | Invalid terminal  |      | Terminal verified |
+            +---------+---------+      +---------+---------+
+                      |                          |
+                      v                          v
+            +-------------------+      +--------------------------+
+            | Alert + deny      |      | Resolve student by userId|
+            +-------------------+      +------------+-------------+
+                                                 |
+                                     +-----------+-----------+
+                                     |                       |
+                                     v                       v
+                           +------------------+     +-------------------+
+                           | Student not found|     | Student found     |
+                           +--------+---------+     +--------+----------+
+                                    |                        |
+                                    v                        v
+                        +------------------------+   +--------------------------+
+                        | Unauthorized log/alert |   | Check block + approval   |
+                        +------------------------+   +------------+-------------+
+                                                              |
+                                                  +-----------+-----------+
+                                                  |                       |
+                                                  v                       v
+                                         +-----------------+     +------------------+
+                                         | Policy failed   |     | Policy passed    |
+                                         | deny + alert    |     | toggle entry/exit|
+                                         +-----------------+     +--------+---------+
+                                                                           |
+                                                                           v
+                                                              +-----------------------+
+                                                              | Save logs + notify +  |
+                                                              | socket live updates   |
+                                                              +-----------------------+
 ```
 
 ---
@@ -767,7 +981,7 @@ npm run seed
 
 ### Gate Scanner
 ```
-[ Screenshot: Webcam barcode scanner with scan result card ]
+[ Screenshot: SAP ID manual entry dashboard with result card ]
 ```
 `screenshots/scanner.png`
 
@@ -793,12 +1007,12 @@ npm run seed
 
 ## Future Scope
 
-1. **Face Recognition** -- Integrate a face detection model (e.g., face-api.js or a Python microservice with OpenCV/dlib) alongside barcode scanning for two-factor identification.
-2. **QR Code Support** -- Generate per-student QR codes that encode the SAP ID, enabling phone-based scanning with any QR reader.
+1. **Face Recognition** -- Integrate a face detection model (e.g., face-api.js or a Python microservice with OpenCV/dlib) as an additional identity-verification factor.
+2. **Smart ID Wallet Support** -- Generate secure digital student passes (time-bound tokens) in a mobile wallet for assisted gate verification.
 3. **Mobile Application** -- Build a React Native or Flutter companion app for security guards to scan on-the-go using the phone camera.
 4. **Push Notifications** -- Implement Firebase Cloud Messaging (FCM) for real-time browser and mobile push alerts to parents.
 5. **Attendance Integration** -- Connect entry logs with the college LMS or ERP system to auto-mark lecture attendance based on campus presence.
-6. **RFID / NFC Support** -- Support RFID card readers or NFC tap at gate turnstiles as an alternative to barcode scanning.
+6. **RFID / NFC Support** -- Support RFID card readers or NFC tap at gate turnstiles as an additional input channel.
 7. **Geo-fencing** -- Use the browser Geolocation API to verify that scans are performed within the campus premises only.
 8. **Multi-gate Support** -- Extend the schema to track which physical gate the student entered/exited from.
 9. **Automated Reporting** -- Generate daily/weekly PDF reports summarizing attendance, late returns, and unauthorized attempts, and email them to administrators.
