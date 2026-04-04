@@ -1,6 +1,9 @@
 # Backend
 node_modules/
 .env
+backend/uploads/
+backend/*.xlsx
+backend/*.xls
 
 # Frontend
 frontend/node_modules/

@@ -8,6 +8,7 @@ import {
   HiOutlineUserGroup,
   HiOutlineRefresh,
   HiOutlinePlus,
+  HiOutlineUpload,
 } from 'react-icons/hi';
 import {
   getStudentsApi,
@@ -15,6 +16,7 @@ import {
   createStudentApi,
   getHostelsApi,
 } from '../services/api';
+import ExcelUploadModal from '../components/ExcelUploadModal';
 
 const courseOptions = ['pharmacy', 'engineering', 'mbatech', 'pharmatech'];
 const departmentByCourse = {
@@ -33,6 +35,7 @@ export default function StudentManagement() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editForm, setEditForm] = useState(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -139,13 +142,22 @@ export default function StudentManagement() {
           </h1>
           <p className="text-gray-500 dark:text-gray-400">View and edit student information</p>
         </div>
-        <button
-          onClick={loadData}
-          className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-        >
-          <HiOutlineRefresh className="w-5 h-5" />
-          Refresh
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
+            <HiOutlineUpload className="w-5 h-5" />
+            Upload Excel
+          </button>
+          <button
+            onClick={loadData}
+            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            <HiOutlineRefresh className="w-5 h-5" />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -520,6 +532,13 @@ export default function StudentManagement() {
           </div>
         </div>
       )}
+
+      {/* Excel Upload Modal */}
+      <ExcelUploadModal 
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onSuccess={loadData}
+      />
     </div>
   );
 }

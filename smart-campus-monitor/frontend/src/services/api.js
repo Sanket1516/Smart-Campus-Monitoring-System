@@ -47,6 +47,9 @@ export const getStudentApi = (sapId) => api.get(`/students/${sapId}`);
 export const createStudentApi = (data) => api.post('/students', data);
 export const updateStudentApi = (sapId, data) => api.put(`/students/${sapId}`, data);
 export const deleteStudentApi = (sapId) => api.delete(`/students/${sapId}`);
+export const uploadStudentsExcelApi = (formData) => api.post('/students/upload', formData, {
+  headers: { 'Content-Type': 'multipart/form-data' }
+});
 
 // Logs
 export const getLogsApi = (params) => api.get('/logs', { params });
