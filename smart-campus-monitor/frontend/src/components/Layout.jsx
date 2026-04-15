@@ -39,7 +39,7 @@ const navItems = [
 
 export default function Layout() {
   const { admin, logout } = useAuth();
-  const { connected } = useSocket();
+  const { connected, socketError } = useSocket();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
@@ -147,15 +147,21 @@ export default function Layout() {
             Smart Campus Entry Monitoring System
           </h2>
           <div className="ml-auto flex items-center gap-3">
-            <span
-              className={`hidden rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide md:inline-flex ${
+            <div
+              className={`hidden max-w-xs rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide md:flex md:flex-col ${
                 connected
                   ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
                   : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
               }`}
+              title={!connected && socketError ? socketError : connected ? 'Socket Online' : 'Socket Offline'}
             >
-              {connected ? 'Socket Online' : 'Socket Offline'}
-            </span>
+              <span className="uppercase">{connected ? 'Socket Online' : 'Socket Offline'}</span>
+              {!connected && socketError && (
+                <span className="max-w-[220px] truncate text-[10px] normal-case font-medium">
+                  {socketError}
+                </span>
+              )}
+            </div>
             <AlertBell />
             <button
               type="button"

@@ -3,6 +3,12 @@ const ZKLib = require('node-zklib');
 const { COMMANDS } = require('node-zklib/constants');
 const Student = require('../models/Student');
 const TerminalConfig = require('../models/TerminalConfig');
+const DeviceAllocation = require('../models/DeviceAllocation');
+const {
+  isHostelTerminal,
+  isMainGateTerminal,
+  reconcileStudentDeviceAllocations,
+} = require('./deviceAllocationService');
 
 const ZK_PORT = 4370;
 const ZK_TIMEOUT = 10000;
@@ -87,6 +93,16 @@ const buildUserBuffer = ({ zktUserID, name }) => {
   userBuffer.write(safeUserId, 48, 'ascii');
 
   return userBuffer;
+};
+
+const buildDeleteUserBuffer = ({ uid, userId }) => {
+  const payload = Buffer.alloc(72);
+  const safeUserId = String(userId).slice(0, 9);
+
+  payload.writeUInt16LE(Number(uid || userId), 0);
+  payload.write(safeUserId, 48, 'ascii');
+
+  return payload;
 };
 
 const extractTemplatePayload = (responseBuffer) => {
@@ -218,6 +234,78 @@ const pushTemplateToDevice = async (terminalIP, zktUserID, name, template) =>
     };
   });
 
+const removeUserFromDevice = async (terminalIP, zktUserID) =>
+  withDevice(terminalIP, async (client) => {
+    const users = await client.getUsers();
+    const deviceUser = findDeviceUser(users, zktUserID);
+
+    if (!deviceUser) {
+      return {
+        success: true,
+        terminalIP,
+        zktUserID: Number(zktUserID),
+        removed: false,
+      };
+    }
+
+    await client.executeCmd(
+      COMMANDS.CMD_DELETE_USER,
+      buildDeleteUserBuffer({
+        uid: deviceUser.uid,
+        userId: deviceUser.userId || zktUserID,
+      })
+    );
+
+    return {
+      success: true,
+      terminalIP,
+      zktUserID: Number(zktUserID),
+      removed: true,
+    };
+  });
+
+const removeStudentFromDeviceAllocations = async (allocations = []) => {
+  const results = [];
+
+  for (const allocation of allocations) {
+    const terminal = allocation.device;
+
+    if (!terminal?.terminalIP) {
+      results.push({
+        machineNumber: terminal?.machineNumber || null,
+        terminalIP: terminal?.terminalIP || '',
+        success: false,
+        skipped: true,
+        error: 'Terminal IP is not configured',
+      });
+      continue;
+    }
+
+    try {
+      const result = await removeUserFromDevice(terminal.terminalIP, allocation.localUserId);
+      results.push({
+        machineNumber: terminal.machineNumber,
+        terminalIP: terminal.terminalIP,
+        success: result.success,
+        removed: result.removed,
+      });
+    } catch (error) {
+      results.push({
+        machineNumber: terminal.machineNumber,
+        terminalIP: terminal.terminalIP,
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+
+  return {
+    success: results.every((result) => result.success || result.skipped),
+    total: results.length,
+    results,
+  };
+};
+
 const syncStudentToAllTerminals = async (studentInput) => {
   const student = await resolveStudentForSync(studentInput);
 
@@ -239,18 +327,29 @@ const syncStudentToAllTerminals = async (studentInput) => {
     };
   }
 
-  const terminals = await TerminalConfig.find({
-    isEnrollmentStation: false,
-    terminalIP: { $ne: '' },
-  }).lean();
+  const allocations = await DeviceAllocation.find({ studentId: student._id })
+    .populate('deviceId', 'machineNumber terminalIP terminalLabel terminalType gateName hostel')
+    .lean();
 
   const results = [];
 
-  for (const terminal of terminals) {
+  for (const allocation of allocations) {
+    const terminal = allocation.deviceId;
+
+    if (!terminal?.terminalIP) {
+      results.push({
+        machineNumber: terminal?.machineNumber || null,
+        terminalIP: terminal?.terminalIP || '',
+        success: false,
+        error: 'Terminal IP is not configured',
+      });
+      continue;
+    }
+
     try {
       const result = await pushTemplateToDevice(
         terminal.terminalIP,
-        student.zktUserID,
+        allocation.localUserId,
         student.name,
         templateBuffer
       );
@@ -281,13 +380,35 @@ const syncStudentToAllTerminals = async (studentInput) => {
 
 const syncAllStudentsToNewTerminal = async (terminalIP) => {
   if (!terminalIP) {
+    return { success: false, skipped: true, reason: 'Terminal not provided' };
+  }
+
+  const terminal =
+    typeof terminalIP === 'string'
+      ? await TerminalConfig.findOne({ terminalIP }).lean()
+      : await TerminalConfig.findById(terminalIP._id || terminalIP).lean();
+
+  if (!terminal?.terminalIP) {
     return { success: false, skipped: true, reason: 'Terminal IP not provided' };
   }
 
-  const students = await Student.find({
+  if (terminal.isEnrollmentStation) {
+    return { success: false, skipped: true, reason: 'Enrollment station is excluded from sync' };
+  }
+
+  const filter = {
     fingerprintEnrolled: true,
     zktUserID: { $ne: null },
-  }).select('+fingerprintTemplate');
+  };
+
+  if (isHostelTerminal(terminal) && terminal.hostel) {
+    filter.hostel = terminal.hostel;
+    filter.studentType = 'hosteller';
+  }
+
+  const students = await Student.find({
+    ...filter,
+  }).select('+fingerprintTemplate hostel studentType isHosteller category');
 
   const results = [];
 
@@ -305,7 +426,30 @@ const syncAllStudentsToNewTerminal = async (terminalIP) => {
         continue;
       }
 
-      await pushTemplateToDevice(terminalIP, student.zktUserID, student.name, templateBuffer);
+      const { allocations } = await reconcileStudentDeviceAllocations(student);
+      const targetAllocation = allocations.find(
+        (allocation) => String(allocation.deviceId) === String(terminal._id)
+      );
+
+      if (!targetAllocation) {
+        if (!isMainGateTerminal(terminal) && !isHostelTerminal(terminal)) {
+          results.push({
+            studentId: student._id,
+            sapId: student.sapId,
+            success: false,
+            skipped: true,
+            error: 'Terminal type is not eligible for biometric allocation sync',
+          });
+        }
+        continue;
+      }
+
+      await pushTemplateToDevice(
+        terminal.terminalIP,
+        targetAllocation.localUserId,
+        student.name,
+        templateBuffer
+      );
 
       results.push({
         studentId: student._id,
@@ -335,6 +479,8 @@ module.exports = {
   pullTemplateFromDevice,
   pushUserToDevice,
   pushTemplateToDevice,
+  removeStudentFromDeviceAllocations,
+  removeUserFromDevice,
   syncStudentToAllTerminals,
   syncAllStudentsToNewTerminal,
 };

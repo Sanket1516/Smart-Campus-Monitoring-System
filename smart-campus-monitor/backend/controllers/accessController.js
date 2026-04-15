@@ -36,6 +36,9 @@ const serializeBlockedStudent = (student) => ({
   fingerprintEnrolled: student.fingerprintEnrolled,
 });
 
+const getStudentTypeLabel = (studentType) =>
+  studentType === 'hosteller' ? 'hostellers' : 'day scholars';
+
 // POST /api/access/block/:studentId
 exports.blockStudent = async (req, res) => {
   try {
@@ -94,6 +97,81 @@ exports.blockStudent = async (req, res) => {
   }
 };
 
+// POST /api/access/block-bulk
+exports.blockStudentsByType = async (req, res) => {
+  try {
+    const { studentType, reason, note = '' } = req.body;
+    const finalReason = note?.trim() ? `${reason} - ${note.trim()}` : reason;
+    const now = new Date();
+
+    const students = await Student.find({
+      isActive: true,
+      studentType,
+      accessStatus: { $ne: 'blocked' },
+    }).select('_id name sapId');
+
+    if (students.length === 0) {
+      return res.status(400).json({
+        message: `No active ${getStudentTypeLabel(studentType)} available to block`,
+      });
+    }
+
+    const studentIds = students.map((student) => student._id);
+
+    await Student.updateMany(
+      { _id: { $in: studentIds } },
+      {
+        $set: {
+          accessStatus: 'blocked',
+          blockReason: finalReason,
+          blockedBy: req.admin._id,
+          blockedAt: now,
+          unblockReason: '',
+          unblockedAt: null,
+        },
+      }
+    );
+
+    await AccessControlLog.insertMany(
+      students.map((student) => ({
+        student: student._id,
+        action: 'blocked',
+        reason: finalReason,
+        performedBy: req.admin._id,
+        timestamp: now,
+      }))
+    );
+
+    await Promise.all(
+      students.map((student) =>
+        createAuditLog({
+          admin: req.admin,
+          action: `Blocked student ${student.name} (${student.sapId})`,
+          entity: 'Student',
+          entityId: student._id,
+          oldValue: { accessStatus: 'allowed' },
+          newValue: { accessStatus: 'blocked', blockReason: finalReason },
+          ipAddress: req.ip,
+        })
+      )
+    );
+
+    const updatedStudents = await Student.find({ _id: { $in: studentIds } })
+      .populate('hostel', 'name')
+      .populate('blockedBy', 'name email')
+      .sort({ blockedAt: -1 });
+
+    res.json({
+      success: true,
+      count: updatedStudents.length,
+      studentType,
+      students: updatedStudents.map(serializeBlockedStudent),
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // POST /api/access/unblock/:studentId
 exports.unblockStudent = async (req, res) => {
   try {
@@ -142,6 +220,73 @@ exports.unblockStudent = async (req, res) => {
     res.json({
       success: true,
       student: serializeBlockedStudent(populatedStudent),
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// POST /api/access/unblock-bulk
+exports.unblockStudentsByType = async (req, res) => {
+  try {
+    const { studentType, reason } = req.body;
+    const finalReason = reason.trim();
+    const now = new Date();
+
+    const students = await Student.find({
+      isActive: true,
+      studentType,
+      accessStatus: 'blocked',
+    }).select('_id name sapId blockReason');
+
+    if (students.length === 0) {
+      return res.status(400).json({
+        message: `No blocked ${getStudentTypeLabel(studentType)} available to unblock`,
+      });
+    }
+
+    const studentIds = students.map((student) => student._id);
+
+    await Student.updateMany(
+      { _id: { $in: studentIds } },
+      {
+        $set: {
+          accessStatus: 'allowed',
+          unblockReason: finalReason,
+          unblockedAt: now,
+        },
+      }
+    );
+
+    await AccessControlLog.insertMany(
+      students.map((student) => ({
+        student: student._id,
+        action: 'unblocked',
+        reason: finalReason,
+        performedBy: req.admin._id,
+        timestamp: now,
+      }))
+    );
+
+    await Promise.all(
+      students.map((student) =>
+        createAuditLog({
+          admin: req.admin,
+          action: `Unblocked student ${student.name} (${student.sapId})`,
+          entity: 'Student',
+          entityId: student._id,
+          oldValue: { accessStatus: 'blocked', blockReason: student.blockReason },
+          newValue: { accessStatus: 'allowed', unblockReason: finalReason },
+          ipAddress: req.ip,
+        })
+      )
+    );
+
+    res.json({
+      success: true,
+      count: studentIds.length,
+      studentType,
+      studentIds,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

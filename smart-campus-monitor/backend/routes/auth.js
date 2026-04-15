@@ -30,6 +30,7 @@ router.post(
     body('role')
       .isIn(['admin', 'warden', 'security'])
       .withMessage('Role must be admin, warden, or security'),
+    body('hostelId').optional({ values: 'falsy' }).isMongoId().withMessage('Hostel must be valid'),
     handleValidation,
   ],
   register
@@ -46,6 +47,7 @@ router.put(
     body('role')
       .isIn(['admin', 'warden', 'security'])
       .withMessage('Role must be admin, warden, or security'),
+    body('hostelId').optional({ values: 'falsy' }).isMongoId().withMessage('Hostel must be valid'),
     handleValidation,
   ],
   updateStaff

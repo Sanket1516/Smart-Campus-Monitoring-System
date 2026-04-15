@@ -89,6 +89,12 @@ exports.createHostel = async (req, res) => {
       createdBy: req.admin._id,
     });
 
+    await Hostel.updateMany(
+      { _id: { $ne: hostel._id }, warden: warden._id },
+      { $set: { warden: null } }
+    );
+    await Admin.findByIdAndUpdate(warden._id, { $set: { hostelId: hostel._id } });
+
     const populatedHostel = await Hostel.findById(hostel._id)
       .populate('warden', 'name username email phone role isActive')
       .populate('createdBy', 'name username role');
@@ -143,6 +149,22 @@ exports.updateHostel = async (req, res) => {
       .populate('createdBy', 'name username role');
 
     const nextWardenId = updatedHostel.warden?._id ? String(updatedHostel.warden._id) : null;
+
+    if (nextWardenId) {
+      await Hostel.updateMany(
+        { _id: { $ne: updatedHostel._id }, warden: updatedHostel.warden._id },
+        { $set: { warden: null } }
+      );
+      await Admin.updateMany(
+        { role: 'warden', _id: { $ne: updatedHostel.warden._id }, hostelId: updatedHostel._id },
+        { $set: { hostelId: null } }
+      );
+      await Admin.findByIdAndUpdate(updatedHostel.warden._id, { $set: { hostelId: updatedHostel._id } });
+    }
+
+    if (previousWardenId && previousWardenId !== nextWardenId) {
+      await Admin.findByIdAndUpdate(previousWardenId, { $set: { hostelId: null } });
+    }
 
     if (previousWardenId && nextWardenId && previousWardenId !== nextWardenId) {
       await HostellerRequest.updateMany(
@@ -202,6 +224,9 @@ exports.deleteHostel = async (req, res) => {
     const previousState = hostel.toObject();
     hostel.isActive = false;
     await hostel.save();
+    if (hostel.warden) {
+      await Admin.findByIdAndUpdate(hostel.warden, { $set: { hostelId: null } });
+    }
 
     await createAuditLog({
       admin: req.admin,

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
+const Hostel = require('../models/Hostel');
 const { createAuditLog } = require('../services/auditService');
 
 const signToken = (id) =>
@@ -14,10 +15,29 @@ const serializeAdmin = (admin) => ({
   email: admin.email,
   phone: admin.phone,
   role: admin.role,
+  hostelId: admin.hostelId || null,
   isActive: admin.isActive,
   createdAt: admin.createdAt,
   updatedAt: admin.updatedAt,
 });
+
+const syncWardenHostelAssignment = async ({ staffId, role, hostelId }) => {
+  if (!staffId) {
+    return;
+  }
+
+  await Hostel.updateMany({ warden: staffId }, { $set: { warden: null } });
+
+  if (role === 'warden' && hostelId) {
+    const previousHostel = await Hostel.findById(hostelId).select('warden');
+
+    if (previousHostel?.warden && String(previousHostel.warden) !== String(staffId)) {
+      await Admin.findByIdAndUpdate(previousHostel.warden, { $set: { hostelId: null } });
+    }
+
+    await Hostel.findByIdAndUpdate(hostelId, { $set: { warden: staffId } });
+  }
+};
 
 // POST /api/auth/login
 exports.login = async (req, res) => {
@@ -58,14 +78,36 @@ exports.getMe = async (req, res) => {
 // POST /api/auth/register (admin only)
 exports.register = async (req, res) => {
   try {
-    const { username, password, name, email, phone, role } = req.body;
+    const { username, password, name, email, phone, role, hostelId } = req.body;
 
     const existing = await Admin.findOne({ username });
     if (existing) {
       return res.status(400).json({ message: 'Username already exists' });
     }
 
-    const admin = await Admin.create({ username, password, name, email, phone, role });
+    if (role === 'warden' && hostelId) {
+      const hostel = await Hostel.findOne({ _id: hostelId, isActive: true });
+
+      if (!hostel) {
+        return res.status(400).json({ message: 'Assigned hostel must be active and valid' });
+      }
+    }
+
+    const admin = await Admin.create({
+      username,
+      password,
+      name,
+      email,
+      phone,
+      role,
+      hostelId: role === 'warden' ? hostelId || null : null,
+    });
+
+    await syncWardenHostelAssignment({
+      staffId: admin._id,
+      role,
+      hostelId: role === 'warden' ? hostelId || null : null,
+    });
 
     await createAuditLog({
       admin: req.admin,
@@ -89,7 +131,8 @@ exports.register = async (req, res) => {
 exports.getStaff = async (_req, res) => {
   try {
     const staff = await Admin.find()
-      .select('username name email phone role isActive createdAt updatedAt')
+      .select('username name email phone role hostelId isActive createdAt updatedAt')
+      .populate('hostelId', 'name code')
       .sort({ role: 1, name: 1 });
 
     res.json({ staff });
@@ -101,21 +144,43 @@ exports.getStaff = async (_req, res) => {
 // PUT /api/auth/staff/:id
 exports.updateStaff = async (req, res) => {
   try {
-    const { name, email, phone, role } = req.body;
+    const { name, email, phone, role, hostelId } = req.body;
 
     const previousStaff = await Admin.findById(req.params.id)
-      .select('username name email phone role isActive createdAt updatedAt')
+      .select('username name email phone role hostelId isActive createdAt updatedAt')
       .lean();
 
     if (!previousStaff) {
       return res.status(404).json({ message: 'Staff member not found' });
     }
 
+    if (role === 'warden' && hostelId) {
+      const hostel = await Hostel.findOne({ _id: hostelId, isActive: true });
+
+      if (!hostel) {
+        return res.status(400).json({ message: 'Assigned hostel must be active and valid' });
+      }
+    }
+
     const staff = await Admin.findByIdAndUpdate(
       req.params.id,
-      { name, email, phone, role },
+      {
+        name,
+        email,
+        phone,
+        role,
+        hostelId: role === 'warden' ? hostelId || null : null,
+      },
       { new: true, runValidators: true }
-    ).select('username name email phone role isActive createdAt updatedAt');
+    )
+      .select('username name email phone role hostelId isActive createdAt updatedAt')
+      .populate('hostelId', 'name code');
+
+    await syncWardenHostelAssignment({
+      staffId: staff._id,
+      role,
+      hostelId: role === 'warden' ? hostelId || null : null,
+    });
 
     await createAuditLog({
       admin: req.admin,
@@ -141,7 +206,7 @@ exports.deactivateStaff = async (req, res) => {
     }
 
     const previousStaff = await Admin.findById(req.params.id)
-      .select('username name email phone role isActive createdAt updatedAt')
+      .select('username name email phone role hostelId isActive createdAt updatedAt')
       .lean();
 
     if (!previousStaff) {
@@ -150,9 +215,12 @@ exports.deactivateStaff = async (req, res) => {
 
     const staff = await Admin.findByIdAndUpdate(
       req.params.id,
-      { isActive: false },
+      { isActive: false, hostelId: null },
       { new: true }
-    ).select('username name email phone role isActive createdAt updatedAt');
+    )
+      .select('username name email phone role hostelId isActive createdAt updatedAt');
+
+    await Hostel.updateMany({ warden: staff._id }, { $set: { warden: null } });
 
     await createAuditLog({
       admin: req.admin,

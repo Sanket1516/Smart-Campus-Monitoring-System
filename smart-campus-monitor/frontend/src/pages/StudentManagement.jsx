@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   HiOutlineSearch,
@@ -26,7 +27,358 @@ const departmentByCourse = {
   pharmatech: ['pharmatech'],
 };
 
+const createStudentForm = () => ({
+  sapId: '',
+  name: '',
+  email: '',
+  phone: '',
+  parentEmail: '',
+  parentPhone: '',
+  category: 'dayscholars',
+  course: 'engineering',
+  department: 'computer science',
+  year: 1,
+  address: '',
+  bloodGroup: '',
+  hostel: '',
+  roomNumber: '',
+  wardenApprovalRequired: true,
+});
+
+const isHostellerCategory = (category) => String(category || '').toLowerCase() === 'hostellers';
+
+const normalizeCreatePayload = (form) => ({
+  sapId: form.sapId.trim(),
+  name: form.name.trim(),
+  email: form.email.trim(),
+  phone: form.phone.trim(),
+  parentEmail: form.parentEmail.trim(),
+  parentPhone: form.parentPhone.trim(),
+  category: form.category,
+  course: form.course,
+  department: form.department,
+  year: form.year ? Number(form.year) : undefined,
+  address: form.address.trim(),
+  bloodGroup: form.bloodGroup.trim(),
+  hostel: isHostellerCategory(form.category) ? form.hostel || undefined : undefined,
+  roomNumber: isHostellerCategory(form.category) ? form.roomNumber.trim() : '',
+  wardenApprovalRequired: isHostellerCategory(form.category) ? Boolean(form.wardenApprovalRequired) : false,
+});
+
+const validateStudentForm = (form) => {
+  if (!form.sapId.trim() || !form.name.trim() || !form.email.trim()) {
+    return 'SAP ID, name, and email are required';
+  }
+
+  if (!form.category || !form.course || !form.department) {
+    return 'Category, course, and department are required';
+  }
+
+  if (form.email && !/^\S+@\S+\.\S+$/.test(form.email.trim())) {
+    return 'Enter a valid email address';
+  }
+
+  if (form.parentEmail && !/^\S+@\S+\.\S+$/.test(form.parentEmail.trim())) {
+    return 'Enter a valid parent email address';
+  }
+
+  if (isHostellerCategory(form.category) && !form.hostel) {
+    return 'Select a hostel for hosteller students';
+  }
+
+  return '';
+};
+
+const StudentModal = ({
+  title,
+  form,
+  setForm,
+  hostels,
+  saving,
+  onClose,
+  onPrimaryAction,
+  primaryLabel,
+  secondaryAction,
+  secondaryLabel,
+  disableSapId = false,
+}) => {
+  const departmentOptions = useMemo(
+    () => departmentByCourse[form.course] || [],
+    [form.course]
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white shadow-xl dark:bg-gray-800">
+        <div className="flex items-center justify-between border-b p-6 dark:border-gray-700">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{title}</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            <HiOutlineX className="h-6 w-6" />
+          </button>
+        </div>
+
+        <div className="space-y-6 p-6">
+          <div>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Personal Information
+            </h3>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  SAP ID *
+                </label>
+                <input
+                  type="text"
+                  value={form.sapId}
+                  disabled={disableSapId}
+                  onChange={(e) => setForm((current) => ({ ...current, sapId: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 disabled:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Name *
+                </label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Email *
+                </label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm((current) => ({ ...current, email: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Phone
+                </label>
+                <input
+                  type="text"
+                  value={form.phone}
+                  onChange={(e) => setForm((current) => ({ ...current, phone: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Blood Group
+                </label>
+                <input
+                  type="text"
+                  value={form.bloodGroup}
+                  onChange={(e) => setForm((current) => ({ ...current, bloodGroup: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Category *
+                </label>
+                <select
+                  value={form.category}
+                  onChange={(e) =>
+                    setForm((current) => ({
+                      ...current,
+                      category: e.target.value,
+                      hostel: e.target.value === 'hostellers' ? current.hostel : '',
+                      roomNumber: e.target.value === 'hostellers' ? current.roomNumber : '',
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                >
+                  <option value="dayscholars">Day Scholar</option>
+                  <option value="hostellers">Hosteller</option>
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Address
+                </label>
+                <textarea
+                  value={form.address}
+                  onChange={(e) => setForm((current) => ({ ...current, address: e.target.value }))}
+                  rows="2"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Parent / Guardian
+            </h3>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Parent Email
+                </label>
+                <input
+                  type="email"
+                  value={form.parentEmail}
+                  onChange={(e) => setForm((current) => ({ ...current, parentEmail: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Parent Phone
+                </label>
+                <input
+                  type="text"
+                  value={form.parentPhone}
+                  onChange={(e) => setForm((current) => ({ ...current, parentPhone: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Academic Information
+            </h3>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Course *
+                </label>
+                <select
+                  value={form.course}
+                  onChange={(e) =>
+                    setForm((current) => ({
+                      ...current,
+                      course: e.target.value,
+                      department: departmentByCourse[e.target.value]?.[0] || '',
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                >
+                  {courseOptions.map((course) => (
+                    <option key={course} value={course}>
+                      {course}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Department *
+                </label>
+                <select
+                  value={form.department}
+                  onChange={(e) => setForm((current) => ({ ...current, department: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                >
+                  {departmentOptions.map((department) => (
+                    <option key={department} value={department}>
+                      {department}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Year
+                </label>
+                <select
+                  value={form.year}
+                  onChange={(e) => setForm((current) => ({ ...current, year: Number(e.target.value) }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                >
+                  {[1, 2, 3, 4, 5].map((year) => (
+                    <option key={year} value={year}>
+                      Year {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {isHostellerCategory(form.category) && (
+            <div>
+              <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Hostel Information
+              </h3>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Hostel *
+                  </label>
+                  <select
+                    value={form.hostel}
+                    onChange={(e) => setForm((current) => ({ ...current, hostel: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  >
+                    <option value="">Select Hostel</option>
+                    {hostels.map((hostel) => (
+                      <option key={hostel._id} value={hostel._id}>
+                        {hostel.name} {hostel.code ? `(${hostel.code})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Room Number
+                  </label>
+                  <input
+                    type="text"
+                    value={form.roomNumber}
+                    onChange={(e) => setForm((current) => ({ ...current, roomNumber: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-3 border-t p-6 dark:border-gray-700">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-gray-300 px-4 py-2 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-700"
+          >
+            Cancel
+          </button>
+          {secondaryAction && (
+            <button
+              onClick={secondaryAction}
+              disabled={saving}
+              className="rounded-lg border border-primary-300 px-4 py-2 text-primary-700 hover:bg-primary-50 disabled:opacity-50"
+            >
+              {secondaryLabel}
+            </button>
+          )}
+          <button
+            onClick={onPrimaryAction}
+            disabled={saving}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-white hover:bg-primary-700 disabled:opacity-50"
+          >
+            <HiOutlineSave className="h-5 w-5" />
+            {primaryLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function StudentManagement() {
+  const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [hostels, setHostels] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +388,8 @@ export default function StudentManagement() {
   const [saving, setSaving] = useState(false);
   const [editForm, setEditForm] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState(createStudentForm());
 
   useEffect(() => {
     loadData();
@@ -44,17 +398,24 @@ export default function StudentManagement() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [studentsRes, hostelsRes] = await Promise.all([
-        getStudentsApi(),
-        getHostelsApi(),
-      ]);
+      const [studentsRes, hostelsRes] = await Promise.all([getStudentsApi(), getHostelsApi()]);
       setStudents(studentsRes.data.students || []);
       setHostels(hostelsRes.data.hostels || []);
-    } catch (error) {
+    } catch (_error) {
       toast.error('Failed to load data');
     } finally {
       setLoading(false);
     }
+  };
+
+  const openCreateModal = () => {
+    setCreateForm(createStudentForm());
+    setShowCreateModal(true);
+  };
+
+  const closeCreateModal = () => {
+    setShowCreateModal(false);
+    setCreateForm(createStudentForm());
   };
 
   const handleEdit = (student) => {
@@ -69,51 +430,37 @@ export default function StudentManagement() {
       category: student.category,
       course: student.course,
       department: student.department,
-      year: student.year,
+      year: student.year || 1,
       address: student.address || '',
       bloodGroup: student.bloodGroup || '',
-      studentType: student.studentType,
       hostel: student.hostel?._id || '',
       roomNumber: student.roomNumber || '',
+      wardenApprovalRequired:
+        student.wardenApprovalRequired !== undefined ? student.wardenApprovalRequired : true,
     });
     setEditing(true);
   };
 
   const handleSave = async () => {
-    if (!editForm.name || !editForm.email || !editForm.sapId) {
-      toast.error('Name, Email, and SAP ID are required');
+    const validationError = validateStudentForm(editForm);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
     setSaving(true);
     try {
-      const payload = {
-        name: editForm.name,
-        email: editForm.email,
-        phone: editForm.phone,
-        parentEmail: editForm.parentEmail,
-        parentPhone: editForm.parentPhone,
-        category: editForm.category,
-        course: editForm.course,
-        department: editForm.department,
-        year: editForm.year,
-        address: editForm.address,
-        bloodGroup: editForm.bloodGroup,
-        studentType: editForm.studentType,
-        hostel: editForm.hostel || undefined,
-        roomNumber: editForm.roomNumber,
-      };
-
+      const payload = normalizeCreatePayload(editForm);
       const res = await updateStudentApi(selectedStudent.sapId, payload);
-      
+
       setStudents((prev) =>
-        prev.map((s) => (s._id === selectedStudent._id ? res.data.student : s))
+        prev.map((student) => (student._id === selectedStudent._id ? res.data.student : student))
       );
-      
+
       toast.success('Student updated successfully');
       setEditing(false);
       setSelectedStudent(null);
-      loadData(); // Reload to get updated data with populated fields
+      await loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update student');
     } finally {
@@ -121,55 +468,83 @@ export default function StudentManagement() {
     }
   };
 
-  const filteredStudents = students.filter(
-    (s) =>
-      s.name?.toLowerCase().includes(search.toLowerCase()) ||
-      s.sapId?.toLowerCase().includes(search.toLowerCase()) ||
-      s.email?.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleCreateStudent = async ({ continueToEnrollment = false } = {}) => {
+    const validationError = validateStudentForm(createForm);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
 
-  const departmentOptions = editForm?.course
-    ? departmentByCourse[editForm.course] || []
-    : [];
+    setSaving(true);
+    try {
+      const payload = normalizeCreatePayload(createForm);
+      const res = await createStudentApi(payload);
+      const createdStudent = res.data.student;
+
+      toast.success('Student created successfully');
+      closeCreateModal();
+      await loadData();
+
+      if (continueToEnrollment && createdStudent?._id) {
+        navigate(`/admin/enrollment?studentId=${createdStudent._id}`);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to create student');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const filteredStudents = students.filter(
+    (student) =>
+      student.name?.toLowerCase().includes(search.toLowerCase()) ||
+      student.sapId?.toLowerCase().includes(search.toLowerCase()) ||
+      student.email?.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-            Student Management
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400">View and edit student information</p>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Student Management</h1>
+          <p className="text-gray-500 dark:text-gray-400">
+            Add students manually, upload via Excel, and keep enrollment-ready records in one place.
+          </p>
         </div>
         <div className="flex gap-3">
           <button
-            onClick={() => setShowUploadModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            onClick={openCreateModal}
+            className="flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-white transition-colors hover:bg-primary-700"
           >
-            <HiOutlineUpload className="w-5 h-5" />
+            <HiOutlinePlus className="h-5 w-5" />
+            Add Student
+          </button>
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white transition-colors hover:bg-green-700"
+          >
+            <HiOutlineUpload className="h-5 w-5" />
             Upload Excel
           </button>
           <button
             onClick={loadData}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+            className="flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-white transition-colors hover:bg-primary-700"
           >
-            <HiOutlineRefresh className="w-5 h-5" />
+            <HiOutlineRefresh className="h-5 w-5" />
             Refresh
           </button>
         </div>
       </div>
 
-      {/* Search */}
       <div className="flex items-center gap-4">
-        <div className="flex-1 relative">
-          <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <div className="relative flex-1">
+          <HiOutlineSearch className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
             placeholder="Search by name, SAP ID, or email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+            className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
           />
         </div>
         <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -177,56 +552,58 @@ export default function StudentManagement() {
         </div>
       </div>
 
-      {/* Students Table */}
       {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+        <div className="py-12 text-center">
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-primary-600" />
           <p className="text-gray-600 dark:text-gray-400">Loading students...</p>
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+        <div className="overflow-hidden rounded-lg bg-white shadow dark:bg-gray-800">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600">
+              <thead className="border-b bg-gray-50 dark:border-gray-600 dark:bg-gray-700">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                     SAP ID
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                     Name
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                     Email
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                     Type
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                    Hostel
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                     Course
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                     Year
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+              <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
                 {filteredStudents.map((student) => (
                   <tr key={student._id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
+                    <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">
                       {student.sapId}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
                       {student.name}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
                       {student.email}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="whitespace-nowrap px-6 py-4 text-sm">
                       <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        className={`rounded-full px-2 py-1 text-xs font-medium ${
                           student.studentType === 'hosteller'
                             ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
                             : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
@@ -235,18 +612,21 @@ export default function StudentManagement() {
                         {student.studentType === 'hosteller' ? 'Hosteller' : 'Day Scholar'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300 capitalize">
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                      {student.hostel?.name || '-'}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm capitalize text-gray-600 dark:text-gray-300">
                       {student.course}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
-                      Year {student.year}
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                      Year {student.year || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="whitespace-nowrap px-6 py-4 text-sm">
                       <button
                         onClick={() => handleEdit(student)}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-primary-600 text-white rounded hover:bg-primary-700 transition-colors"
+                        className="flex items-center gap-1 rounded bg-primary-600 px-3 py-1.5 text-white transition-colors hover:bg-primary-700"
                       >
-                        <HiOutlinePencil className="w-4 h-4" />
+                        <HiOutlinePencil className="h-4 w-4" />
                         Edit
                       </button>
                     </td>
@@ -255,286 +635,46 @@ export default function StudentManagement() {
               </tbody>
             </table>
           </div>
-          
+
           {filteredStudents.length === 0 && (
-            <div className="text-center py-12">
-              <HiOutlineUserGroup className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <div className="py-12 text-center">
+              <HiOutlineUserGroup className="mx-auto mb-4 h-12 w-12 text-gray-400" />
               <p className="text-gray-600 dark:text-gray-400">No students found</p>
             </div>
           )}
         </div>
       )}
 
-      {/* Edit Modal */}
       {editing && editForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b dark:border-gray-700">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                Edit Student: {selectedStudent?.name}
-              </h2>
-              <button
-                onClick={() => setEditing(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                <HiOutlineX className="w-6 h-6" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 space-y-6">
-              {/* Personal Information */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                  Personal Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      SAP ID *
-                    </label>
-                    <input
-                      type="text"
-                      value={editForm.sapId}
-                      disabled
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={editForm.name}
-                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Email *
-                    </label>
-                    <input
-                      type="email"
-                      value={editForm.email}
-                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Phone
-                    </label>
-                    <input
-                      type="text"
-                      value={editForm.phone}
-                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Blood Group
-                    </label>
-                    <input
-                      type="text"
-                      value={editForm.bloodGroup}
-                      onChange={(e) => setEditForm({ ...editForm, bloodGroup: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                      placeholder="e.g., O+, A-, B+"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Address
-                    </label>
-                    <textarea
-                      value={editForm.address}
-                      onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
-                      rows="2"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Parent Information */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                  Parent/Guardian Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Parent Email
-                    </label>
-                    <input
-                      type="email"
-                      value={editForm.parentEmail}
-                      onChange={(e) => setEditForm({ ...editForm, parentEmail: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Parent Phone
-                    </label>
-                    <input
-                      type="text"
-                      value={editForm.parentPhone}
-                      onChange={(e) => setEditForm({ ...editForm, parentPhone: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Academic Information */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                  Academic Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Course *
-                    </label>
-                    <select
-                      value={editForm.course}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, course: e.target.value, department: '' })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    >
-                      {courseOptions.map((c) => (
-                        <option key={c} value={c} className="capitalize">
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Department *
-                    </label>
-                    <select
-                      value={editForm.department}
-                      onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    >
-                      {departmentOptions.map((d) => (
-                        <option key={d} value={d} className="capitalize">
-                          {d}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Year *
-                    </label>
-                    <select
-                      value={editForm.year}
-                      onChange={(e) => setEditForm({ ...editForm, year: Number(e.target.value) })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    >
-                      {[1, 2, 3, 4, 5].map((y) => (
-                        <option key={y} value={y}>
-                          Year {y}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Student Type & Hostel */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                  Student Type & Accommodation
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Student Type *
-                    </label>
-                    <select
-                      value={editForm.studentType}
-                      onChange={(e) =>
-                        setEditForm({
-                          ...editForm,
-                          studentType: e.target.value,
-                          hostel: e.target.value === 'day_scholar' ? '' : editForm.hostel,
-                          roomNumber: e.target.value === 'day_scholar' ? '' : editForm.roomNumber,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    >
-                      <option value="day_scholar">Day Scholar</option>
-                      <option value="hosteller">Hosteller</option>
-                    </select>
-                  </div>
-                  {editForm.studentType === 'hosteller' && (
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Hostel
-                        </label>
-                        <select
-                          value={editForm.hostel}
-                          onChange={(e) => setEditForm({ ...editForm, hostel: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                        >
-                          <option value="">Select Hostel</option>
-                          {hostels.map((h) => (
-                            <option key={h._id} value={h._id}>
-                              {h.name} ({h.code})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Room Number
-                        </label>
-                        <input
-                          type="text"
-                          value={editForm.roomNumber}
-                          onChange={(e) => setEditForm({ ...editForm, roomNumber: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex items-center justify-end gap-3 p-6 border-t dark:border-gray-700">
-              <button
-                onClick={() => setEditing(false)}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors dark:text-gray-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
-              >
-                <HiOutlineSave className="w-5 h-5" />
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <StudentModal
+          title={`Edit Student: ${selectedStudent?.name || ''}`}
+          form={editForm}
+          setForm={setEditForm}
+          hostels={hostels}
+          saving={saving}
+          onClose={() => setEditing(false)}
+          onPrimaryAction={handleSave}
+          primaryLabel={saving ? 'Saving...' : 'Save Changes'}
+          disableSapId
+        />
       )}
 
-      {/* Excel Upload Modal */}
-      <ExcelUploadModal 
+      {showCreateModal && (
+        <StudentModal
+          title="Add Student"
+          form={createForm}
+          setForm={setCreateForm}
+          hostels={hostels}
+          saving={saving}
+          onClose={closeCreateModal}
+          onPrimaryAction={() => handleCreateStudent({ continueToEnrollment: false })}
+          primaryLabel={saving ? 'Creating...' : 'Create Student'}
+          secondaryAction={() => handleCreateStudent({ continueToEnrollment: true })}
+          secondaryLabel="Create And Open Enrollment"
+        />
+      )}
+
+      <ExcelUploadModal
         isOpen={showUploadModal}
         onClose={() => setShowUploadModal(false)}
         onSuccess={loadData}

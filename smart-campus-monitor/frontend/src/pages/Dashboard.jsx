@@ -27,6 +27,7 @@ import { Bar, Line } from 'react-chartjs-2';
 import toast from 'react-hot-toast';
 import StatCard from '../components/StatCard';
 import { useSocket } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext';
 import {
   getDashboardApi,
   getHostelsApi,
@@ -108,6 +109,7 @@ const groupTerminalStatuses = (terminals) => {
 };
 
 export default function Dashboard() {
+  const { admin } = useAuth();
   const { socket } = useSocket();
   const feedContainerRef = useRef(null);
   const [loading, setLoading] = useState(true);
@@ -122,6 +124,7 @@ export default function Dashboard() {
     () => hostels.find((hostel) => hostel._id === selectedHostelId) || null,
     [hostels, selectedHostelId]
   );
+  const isWardenView = admin?.role === 'warden';
 
   const loadDashboard = async ({ silent = false } = {}) => {
     if (silent) setRefreshing(true);
@@ -413,24 +416,28 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
+          <h1 className="text-2xl font-bold text-gray-800">
+            {isWardenView ? 'Warden Dashboard' : 'Admin Dashboard'}
+          </h1>
           <p className="text-sm text-gray-500">
             One system, multiple views. Monitor gates, hostels, live scans, and approvals in one place.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <select
-            value={selectedHostelId}
-            onChange={(e) => setSelectedHostelId(e.target.value)}
-            className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary-500"
-          >
-            <option value="all">All Campus</option>
-            {hostels.map((hostel) => (
-              <option key={hostel._id} value={hostel._id}>
-                {hostel.name}
-              </option>
-            ))}
-          </select>
+          {!isWardenView && (
+            <select
+              value={selectedHostelId}
+              onChange={(e) => setSelectedHostelId(e.target.value)}
+              className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="all">All Campus</option>
+              {hostels.map((hostel) => (
+                <option key={hostel._id} value={hostel._id}>
+                  {hostel.name}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             type="button"
             onClick={() => loadDashboard({ silent: true })}

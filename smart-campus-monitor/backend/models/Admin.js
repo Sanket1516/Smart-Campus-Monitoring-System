@@ -36,6 +36,11 @@ const adminSchema = new mongoose.Schema(
       enum: ['admin', 'warden', 'security'],
       default: 'security',
     },
+    hostelId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Hostel',
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -43,6 +48,8 @@ const adminSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+adminSchema.index({ role: 1, hostelId: 1 });
 
 // Hash password before saving
 adminSchema.pre('save', async function (next) {

@@ -1,0 +1,125 @@
+{\rtf1\ansi\deff0
+{\fonttbl{\f0 Calibri;}{\f1 Calibri Bold;}}
+\fs24
+\pard\qc\b\f1 Smart Campus Entry Monitoring System\par
+\pard\qc\b\f1 Change Summary Report\par
+\pard\qc\b0\f0 Generated for latest enhancement round\par
+\par
+\pard\b\f1 1. Overview\b0\f0\par
+This document summarizes the changes implemented in the existing Smart Campus Entry Monitoring System without rebuilding the project. The work focused on two major feature areas:\par
+\par
+1. Warden-specific data restriction across dashboard, logs, and hosteller workflows.\par
+2. Manual student creation support in Student Management, aligned with the Excel upload flow.\par
+\par
+\pard\b\f1 2. Warden-Specific Data Restriction\b0\f0\par
+\pard\b Feature Goal:\b0 Ensure that each warden can only access data related to the hostel assigned to them, while admin and security users continue to retain wider access.\par
+\par
+\pard\b Changes Implemented:\b0\par
+1. Added an explicit hostel mapping field to the admin/staff model.\par
+2. Updated staff registration and staff update logic to save the assigned hostel for warden accounts.\par
+3. Added backend-level warden hostel scope resolution logic so access control is enforced even for direct API calls.\par
+4. Updated dashboard APIs so a warden only receives student stats, hostel metrics, and hosteller views for their assigned hostel.\par
+5. Updated entry log APIs so a warden only receives logs for students belonging to their assigned hostel.\par
+6. Restricted unauthorized log actions for wardens.\par
+7. Updated hosteller request APIs so wardens cannot view, approve, reject, or browse requests outside their assigned hostel.\par
+8. Kept hostel assignment in sync between staff records and hostel records.\par
+\par
+\pard\b Backend Areas Updated:\b0\par
+- Admin/staff model\par
+- Auth controller and auth routes\par
+- Hostel controller\par
+- Dashboard controller\par
+- Log controller\par
+- Hosteller controller\par
+- Shared warden scope service\par
+\par
+\pard\b Security Outcome:\b0\par
+The restriction is now enforced at the backend level. Even if a warden manually calls the API, the system limits results to the hostel they are assigned to.\par
+\par
+\pard\b\f1 3. Manual Student Add Form\b0\f0\par
+\pard\b Feature Goal:\b0 Add a manual student creation flow in Student Management with the same functional behavior and downstream compatibility as the Excel upload system.\par
+\par
+\pard\b Changes Implemented:\b0\par
+1. Added an Add Student button in the Student Management page.\par
+2. Added a manual student form modal with all major student fields currently supported by the Excel workflow.\par
+3. Included support for:\par
+- SAP ID\par
+- Name\par
+- Email\par
+- Phone\par
+- Parent email\par
+- Parent phone\par
+- Category\par
+- Course\par
+- Department\par
+- Year\par
+- Address\par
+- Blood group\par
+- Hostel selection for hostellers\par
+- Room number for hostellers\par
+\par
+4. Added category-driven hostel visibility so hostel fields appear only for hostellers.\par
+5. Reused backend normalization logic so manually created students follow the same data shape as Excel-uploaded students.\par
+6. Added request validation for manual student create and update operations.\par
+7. Improved duplicate SAP ID and validation error handling for manual student creation.\par
+8. Added a Create And Open Enrollment option so an admin can immediately continue into the existing enrollment flow after adding a student.\par
+\par
+\pard\b Consistency Outcome:\b0\par
+Students created manually now behave like Excel-uploaded students in downstream features such as enrollment, logs, hostel workflows, and access tracking.\par
+\par
+\pard\b\f1 4. Frontend Changes\b0\f0\par
+\pard\b Pages Updated:\b0\par
+1. Student Management\par
+- Added Add Student button.\par
+- Added full manual create modal.\par
+- Preserved Excel upload support.\par
+- Kept edit flow intact while aligning it more closely with the normalized backend payload.\par
+\par
+2. Enrollment\par
+- Added support for preselecting a student after manual creation using query parameters.\par
+\par
+3. Settings\par
+- Added hostel assignment support in staff management for warden accounts.\par
+\par
+4. Dashboard\par
+- Adjusted the dashboard title and hostel filter behavior to better match warden-restricted access.\par
+\par
+\pard\b\f1 5. Backend Changes\b0\f0\par
+\pard\b Major Logic Updates:\b0\par
+1. Added shared warden scope resolution service.\par
+2. Added hostelId to admin/staff records.\par
+3. Synced hostel assignment between wardens and hostel ownership records.\par
+4. Restricted dashboard data at query level for wardens.\par
+5. Restricted log data at query level for wardens.\par
+6. Restricted hosteller request operations by assigned hostel.\par
+7. Added manual student validation and more consistent student response payloads.\par
+\par
+\pard\b\f1 6. Files Touched in This Change Set\b0\f0\par
+Backend:\par
+- backend/models/Admin.js\par
+- backend/controllers/authController.js\par
+- backend/routes/auth.js\par
+- backend/controllers/hostelController.js\par
+- backend/controllers/dashboardController.js\par
+- backend/controllers/logController.js\par
+- backend/controllers/hostellerController.js\par
+- backend/controllers/studentController.js\par
+- backend/routes/students.js\par
+- backend/services/wardenScopeService.js\par
+\par
+Frontend:\par
+- frontend/src/pages/Settings.jsx\par
+- frontend/src/pages/StudentManagement.jsx\par
+- frontend/src/pages/Enrollment.jsx\par
+- frontend/src/pages/Dashboard.jsx\par
+\par
+\pard\b\f1 7. Verification Notes\b0\f0\par
+1. Backend syntax checks were completed successfully.\par
+2. Backend modules loaded correctly after the changes.\par
+3. Frontend build verification could not be fully completed in the sandbox because the Vite build process failed with a sandbox-related spawn EPERM error.\par
+\par
+\pard\b\f1 8. Final Result\b0\f0\par
+The system now supports secure warden-specific hostel access restrictions and a production-ready manual student entry workflow, while preserving existing behavior for admins, security staff, Excel upload, enrollment, and hostel operations.\par
+\par
+\pard\b\f1 End of Report\b0\f0\par
+}

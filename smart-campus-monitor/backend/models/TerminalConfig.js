@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const ALLOWED_TERMINALS_PER_GATE = [1, 2, 3, 4];
+const TERMINAL_TYPES = ['ENROLLMENT', 'MAIN_GATE', 'HOSTEL', 'GENERAL'];
 
 const isValidMachineNumber = (machineNumber) => {
   if (machineNumber === 50) {
@@ -66,6 +67,22 @@ const terminalConfigSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    terminalType: {
+      type: String,
+      enum: TERMINAL_TYPES,
+      default: 'GENERAL',
+    },
+    hostel: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Hostel',
+      default: null,
+    },
+    maxLocalUsers: {
+      type: Number,
+      min: 1,
+      max: 65535,
+      default: 10000,
+    },
     isEnrollmentStation: {
       type: Boolean,
       default: false,
@@ -105,6 +122,15 @@ terminalConfigSchema.pre('validate', function (next) {
   this.isEnrollmentStation = this.machineNumber === 50;
   this.gateNumber = this.isEnrollmentStation ? 0 : Math.floor(this.machineNumber / 100);
   this.terminalNumber = this.isEnrollmentStation ? 0 : this.machineNumber % 100;
+  this.terminalType = this.isEnrollmentStation
+    ? 'ENROLLMENT'
+    : this.terminalType === 'ENROLLMENT' || !this.terminalType
+      ? 'GENERAL'
+      : this.terminalType;
+
+  if (this.terminalType !== 'HOSTEL') {
+    this.hostel = null;
+  }
 
   if (!this.terminalLabel || !this.terminalLabel.trim()) {
     this.terminalLabel = this.isEnrollmentStation
@@ -116,5 +142,8 @@ terminalConfigSchema.pre('validate', function (next) {
 });
 
 terminalConfigSchema.statics.isValidMachineNumber = isValidMachineNumber;
+terminalConfigSchema.index({ terminalType: 1 });
+terminalConfigSchema.index({ hostel: 1 });
+terminalConfigSchema.statics.TERMINAL_TYPES = TERMINAL_TYPES;
 
 module.exports = mongoose.model('TerminalConfig', terminalConfigSchema);

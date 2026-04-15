@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   HiCheckCircle,
@@ -49,6 +50,7 @@ const statusStyles = {
 
 export default function Enrollment() {
   const { admin } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [students, setStudents] = useState([]);
   const [stats, setStats] = useState(null);
   const [hostels, setHostels] = useState([]);
@@ -62,6 +64,7 @@ export default function Enrollment() {
   const [saving, setSaving] = useState(false);
   const [stepState, setStepState] = useState('idle');
   const [summary, setSummary] = useState(null);
+  const preselectedStudentId = searchParams.get('studentId');
 
   const selectedHostel = useMemo(
     () => hostels.find((hostel) => hostel._id === form.hostelId) || null,
@@ -186,6 +189,23 @@ export default function Enrollment() {
     setStepState('idle');
     setSummary(null);
   }, [selectedStudent]);
+
+  useEffect(() => {
+    if (!preselectedStudentId || !students.length) {
+      return;
+    }
+
+    const student = students.find((item) => item._id === preselectedStudentId);
+
+    if (student) {
+      setSelectedStudent(student);
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        next.delete('studentId');
+        return next;
+      });
+    }
+  }, [preselectedStudentId, students, setSearchParams]);
 
   const updateForm = (updates) => setForm((current) => ({ ...current, ...updates }));
 

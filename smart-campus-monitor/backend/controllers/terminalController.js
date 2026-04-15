@@ -25,6 +25,21 @@ const buildTerminalPayload = (payload = {}, existingTerminal = null) => {
     terminalLabel: (payload.terminalLabel || '').trim() || fallbackLabel,
     location: (payload.location || '').trim(),
     terminalIP: (payload.terminalIP || '').trim(),
+    terminalType: (
+      payload.terminalType ||
+      (isEnrollmentStation ? 'ENROLLMENT' : existingTerminal?.terminalType) ||
+      'GENERAL'
+    )
+      .trim()
+      .toUpperCase(),
+    hostel:
+      payload.hostel !== undefined
+        ? payload.hostel || null
+        : existingTerminal?.hostel || null,
+    maxLocalUsers:
+      payload.maxLocalUsers !== undefined
+        ? toNumber(payload.maxLocalUsers)
+        : existingTerminal?.maxLocalUsers,
     isEnrollmentStation,
   };
 };
@@ -73,6 +88,7 @@ const formatTerminalForResponse = async (terminal) => {
 exports.getTerminals = async (_req, res) => {
   try {
     const terminals = await TerminalConfig.find()
+      .populate('hostel', 'name code')
       .populate('addedBy', 'name username role')
       .sort({ isEnrollmentStation: 1, gateNumber: 1, terminalNumber: 1, gateName: 1 });
 
@@ -89,8 +105,9 @@ exports.getTerminalStatus = async (_req, res) => {
   try {
     const terminals = await TerminalConfig.find()
       .select(
-        'machineNumber deviceSN deviceName gateName gateNumber terminalNumber terminalLabel location terminalIP isEnrollmentStation isOnline lastSeen scansToday totalScans addedAt'
+        'machineNumber deviceSN deviceName gateName gateNumber terminalNumber terminalLabel location terminalIP terminalType hostel maxLocalUsers isEnrollmentStation isOnline lastSeen scansToday totalScans addedAt'
       )
+      .populate('hostel', 'name code')
       .sort({ isEnrollmentStation: 1, gateNumber: 1, terminalNumber: 1, gateName: 1 })
       .lean();
 
@@ -131,7 +148,7 @@ exports.createTerminal = async (req, res) => {
     });
 
     if (!terminal.isEnrollmentStation && terminal.terminalIP) {
-      syncAllStudentsToNewTerminal(terminal.terminalIP).catch((error) => {
+      syncAllStudentsToNewTerminal(terminal).catch((error) => {
         console.error('Initial terminal sync failed:', error.message);
       });
     }

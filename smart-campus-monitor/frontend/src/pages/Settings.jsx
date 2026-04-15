@@ -70,6 +70,7 @@ const emptyStaff = {
   email: '',
   phone: '',
   role: 'warden',
+  hostelId: '',
 };
 
 const emptyTerminal = {
@@ -385,6 +386,7 @@ export default function Settings() {
       email: member.email || '',
       phone: member.phone || '',
       role: member.role || 'warden',
+      hostelId: member.hostelId?._id || '',
     });
     setShowStaffForm(true);
   };
@@ -648,11 +650,21 @@ export default function Settings() {
               <input className="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Name" value={staffForm.name} onChange={(e) => setStaffForm((s) => ({ ...s, name: e.target.value }))} required />
               <input className="rounded-lg border border-gray-300 px-3 py-2 text-sm" type="email" placeholder="Email" value={staffForm.email} onChange={(e) => setStaffForm((s) => ({ ...s, email: e.target.value }))} />
               <input className="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Phone" value={staffForm.phone} onChange={(e) => setStaffForm((s) => ({ ...s, phone: e.target.value }))} />
-              <select className="rounded-lg border border-gray-300 px-3 py-2 text-sm" value={staffForm.role} onChange={(e) => setStaffForm((s) => ({ ...s, role: e.target.value }))}>
+              <select className="rounded-lg border border-gray-300 px-3 py-2 text-sm" value={staffForm.role} onChange={(e) => setStaffForm((current) => ({ ...current, role: e.target.value, hostelId: e.target.value === 'warden' ? current.hostelId : '' }))}>
                 <option value="admin">Admin</option>
                 <option value="warden">Warden</option>
                 <option value="security">Security</option>
               </select>
+              {staffForm.role === 'warden' && (
+                <select className="rounded-lg border border-gray-300 px-3 py-2 text-sm" value={staffForm.hostelId} onChange={(e) => setStaffForm((s) => ({ ...s, hostelId: e.target.value }))}>
+                  <option value="">Assign Hostel</option>
+                  {hostels.map((hostel) => (
+                    <option key={hostel._id} value={hostel._id}>
+                      {hostel.name} {hostel.code ? `(${hostel.code})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
               <div className="md:col-span-2 xl:col-span-3 flex gap-3">
                 <button className="rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-700" disabled={saving}>
                   {saving ? 'Saving...' : editingStaff ? 'Update Staff' : 'Create Staff'}
@@ -677,6 +689,7 @@ export default function Settings() {
                 </div>
                 <div className="mt-4 space-y-1 text-sm text-gray-600">
                   <p><span className="font-medium text-gray-700">Phone:</span> {member.phone || 'Not set'}</p>
+                  <p><span className="font-medium text-gray-700">Assigned Hostel:</span> {member.hostelId?.name || 'Not assigned'}</p>
                   <p><span className="font-medium text-gray-700">Assigned Hostels:</span> {hostelCountByWarden[member.id || member._id] || 0}</p>
                   <p><span className="font-medium text-gray-700">Created:</span> {fmt(member.createdAt)}</p>
                 </div>

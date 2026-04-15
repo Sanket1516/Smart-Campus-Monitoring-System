@@ -6,6 +6,7 @@ const { sendEmail } = require('../services/notification');
 const { emitWardenLateReturn, emitWardenNewRequest } = require('../services/socketService');
 const { getGracePeriodMinutes, shouldSendLateReturnEmail } = require('../services/configService');
 const { createAuditLog } = require('../services/auditService');
+const { ensureWardenHasHostelAccess, resolveAssignedHostel } = require('../services/wardenScopeService');
 
 const buildReturnDeadline = async (expectedReturnTime) => {
   const gracePeriodMinutes = await getGracePeriodMinutes();
@@ -13,10 +14,6 @@ const buildReturnDeadline = async (expectedReturnTime) => {
 };
 
 const buildRequestQueryForRole = (admin) => {
-  if (admin.role === 'warden') {
-    return { warden: admin._id };
-  }
-
   return {};
 };
 
@@ -249,6 +246,16 @@ exports.getHostellerRequests = async (req, res) => {
     const { status } = req.query;
     const filter = buildRequestQueryForRole(req.admin);
 
+    if (req.admin.role === 'warden') {
+      const assignedHostel = await resolveAssignedHostel(req.admin);
+
+      if (!assignedHostel?._id) {
+        return res.json({ requests: [] });
+      }
+
+      filter.hostel = assignedHostel._id;
+    }
+
     if (status) {
       filter.status = status;
     }
@@ -279,8 +286,8 @@ exports.approveHostellerRequest = async (req, res) => {
       return res.status(404).json({ message: 'Request not found' });
     }
 
-    if (req.admin.role === 'warden' && String(request.warden._id) !== String(req.admin._id)) {
-      return res.status(403).json({ message: 'You can only approve requests assigned to you' });
+    if (req.admin.role === 'warden' && !(await ensureWardenHasHostelAccess(req.admin, request.hostel._id))) {
+      return res.status(403).json({ message: 'You can only approve requests from your assigned hostel' });
     }
 
     const previousStatus = request.status;
@@ -325,8 +332,8 @@ exports.rejectHostellerRequest = async (req, res) => {
       return res.status(404).json({ message: 'Request not found' });
     }
 
-    if (req.admin.role === 'warden' && String(request.warden._id) !== String(req.admin._id)) {
-      return res.status(403).json({ message: 'You can only reject requests assigned to you' });
+    if (req.admin.role === 'warden' && !(await ensureWardenHasHostelAccess(req.admin, request.hostel._id))) {
+      return res.status(403).json({ message: 'You can only reject requests from your assigned hostel' });
     }
 
     const previousStatus = request.status;
@@ -367,6 +374,16 @@ exports.getActiveHostellerRequests = async (req, res) => {
       usedForEntry: false,
     };
 
+    if (req.admin.role === 'warden') {
+      const assignedHostel = await resolveAssignedHostel(req.admin);
+
+      if (!assignedHostel?._id) {
+        return res.json({ requests: [] });
+      }
+
+      filter.hostel = assignedHostel._id;
+    }
+
     const requests = await HostellerRequest.find(filter)
       .populate('student', 'name sapId department year roomNumber photoUrl')
       .populate('hostel', 'name code')
@@ -387,7 +404,13 @@ exports.getStudentHostellerHistory = async (req, res) => {
     const filter = { student: req.params.studentId };
 
     if (req.admin.role === 'warden') {
-      filter.warden = req.admin._id;
+      const assignedHostel = await resolveAssignedHostel(req.admin);
+
+      if (!assignedHostel?._id) {
+        return res.json({ requests: [] });
+      }
+
+      filter.hostel = assignedHostel._id;
     }
 
     const requests = await HostellerRequest.find(filter)
@@ -409,8 +432,8 @@ exports.getHostelHostellerRequests = async (req, res) => {
   try {
     const filter = { hostel: req.params.hostelId };
 
-    if (req.admin.role === 'warden') {
-      filter.warden = req.admin._id;
+    if (req.admin.role === 'warden' && !(await ensureWardenHasHostelAccess(req.admin, req.params.hostelId))) {
+      return res.status(403).json({ message: 'You do not have access to this hostel' });
     }
 
     const requests = await HostellerRequest.find(filter)

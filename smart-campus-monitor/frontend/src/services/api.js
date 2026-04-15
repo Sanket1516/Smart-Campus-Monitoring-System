@@ -103,8 +103,10 @@ export const getEnrollmentStatsApi = () => api.get('/enrollment/stats');
 
 // Access control
 export const blockStudentApi = (studentId, data) => api.post(`/access/block/${studentId}`, data);
+export const blockStudentsByTypeApi = (data) => api.post('/access/block-bulk', data);
 export const unblockStudentApi = (studentId, data) =>
   api.post(`/access/unblock/${studentId}`, data);
+export const unblockStudentsByTypeApi = (data) => api.post('/access/unblock-bulk', data);
 export const getBlockedStudentsApi = (params) => api.get('/access/blocked', { params });
 export const getAccessLogsApi = (studentId) => api.get(`/access/log/${studentId}`);
 

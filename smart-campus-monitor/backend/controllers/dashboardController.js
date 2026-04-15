@@ -4,6 +4,7 @@ const UnauthorizedLog = require('../models/UnauthorizedLog');
 const HostellerRequest = require('../models/HostellerRequest');
 const AlertLog = require('../models/AlertLog');
 const { CATEGORY_ALIASES, isHosteller, normalizeCategory } = require('../utils/studentMeta');
+const { resolveAssignedHostel } = require('../services/wardenScopeService');
 
 const formatDateLocal = (date = new Date()) => {
   const year = date.getFullYear();
@@ -26,18 +27,11 @@ exports.getDashboardStats = async (req, res) => {
     let hostelId = req.query.hostelId || '';
     const weekStart = shiftDateStr(selectedDate, -6);
 
-    // If user is a warden, they can only see their assigned hostels
-    let wardenHostelIds = [];
+    let assignedHostel = null;
     if (req.admin.role === 'warden') {
-      const Hostel = require('../models/Hostel');
-      const wardenHostels = await Hostel.find({
-        warden: req.admin._id,
-        isActive: true,
-      }).select('_id');
-      wardenHostelIds = wardenHostels.map(h => h._id);
-      
-      // If no hostels assigned, return empty data
-      if (wardenHostelIds.length === 0) {
+      assignedHostel = await resolveAssignedHostel(req.admin);
+
+      if (!assignedHostel?._id) {
         return res.json({
           todayStats: {
             totalScans: 0,
@@ -61,11 +55,10 @@ exports.getDashboardStats = async (req, res) => {
       
       // If warden hasn't selected a specific hostel, use first assigned hostel
       if (!hostelId) {
-        hostelId = String(wardenHostelIds[0]);
+        hostelId = String(assignedHostel._id);
       }
-      
-      // Verify warden has access to the requested hostel
-      if (hostelId && !wardenHostelIds.some(id => String(id) === hostelId)) {
+
+      if (hostelId && String(assignedHostel._id) !== hostelId) {
         return res.status(403).json({ message: 'You do not have access to this hostel' });
       }
     }
@@ -73,12 +66,7 @@ exports.getDashboardStats = async (req, res) => {
     // Build student filter based on role and hostel selection
     let studentFilter = { isActive: true };
     if (req.admin.role === 'warden') {
-      // Warden sees only students from their assigned hostels
-      if (hostelId) {
-        studentFilter.hostel = hostelId;
-      } else if (wardenHostelIds.length > 0) {
-        studentFilter.hostel = { $in: wardenHostelIds };
-      }
+      studentFilter.hostel = hostelId || assignedHostel?._id || null;
     }
 
     // Run all queries in parallel
@@ -87,7 +75,6 @@ exports.getDashboardStats = async (req, res) => {
       todayLogs,
       unauthorizedToday,
       last7DaysLogs,
-      blockedAttemptsToday,
       activeApprovalsRaw,
       unauthorizedFeed,
     ] = await Promise.all([
@@ -124,13 +111,6 @@ exports.getDashboardStats = async (req, res) => {
         },
         { $sort: { _id: 1 } },
       ]),
-      AlertLog.countDocuments({
-        type: 'blocked',
-        timestamp: {
-          $gte: new Date(`${selectedDate}T00:00:00`),
-          $lt: new Date(`${shiftDateStr(selectedDate, 1)}T00:00:00`),
-        },
-      }),
       HostellerRequest.find({
         status: 'approved',
         usedForEntry: false,
@@ -268,6 +248,17 @@ exports.getDashboardStats = async (req, res) => {
     const activeApprovals = hostelId
       ? activeApprovalsRaw.filter((request) => String(request.hostel?._id || '') === hostelId)
       : activeApprovalsRaw;
+    const filteredStudentIds = filteredStudents.map((student) => student._id);
+    const blockedAttemptsToday = filteredStudentIds.length
+      ? await AlertLog.countDocuments({
+          type: 'blocked',
+          timestamp: {
+            $gte: new Date(`${selectedDate}T00:00:00`),
+            $lt: new Date(`${shiftDateStr(selectedDate, 1)}T00:00:00`),
+          },
+          'metadata.studentId': { $in: filteredStudentIds },
+        })
+      : 0;
 
     const gateActivityMap = {};
     for (const log of filteredTodayLogs) {
@@ -403,7 +394,7 @@ exports.getDashboardStats = async (req, res) => {
         currentlyInside: currentlyInside.size,
         enteredToday,
         exitedToday,
-        unauthorizedAttempts: hostelId ? unauthorizedToday : unauthorizedToday,
+        unauthorizedAttempts: req.admin.role === 'warden' ? 0 : unauthorizedToday,
         blockedAttemptsToday,
         hostellersOutside: hostellersOutside.size,
         lateReturns,
@@ -438,7 +429,18 @@ exports.getDashboardStats = async (req, res) => {
 exports.getHourlyDistribution = async (req, res) => {
   try {
     const date = req.query.date || todayStr();
-    const hostelId = req.query.hostelId || '';
+    let hostelId = req.query.hostelId || '';
+
+    if (req.admin.role === 'warden') {
+      const assignedHostel = await resolveAssignedHostel(req.admin);
+
+      if (!assignedHostel?._id) {
+        return res.json({});
+      }
+
+      hostelId = String(assignedHostel._id);
+    }
+
     const logs = await EntryLog.find({ date });
 
     let filteredLogs = logs;
@@ -471,11 +473,23 @@ exports.getHourlyDistribution = async (req, res) => {
 // GET /api/dashboard/hostellers
 exports.getHostellerStatus = async (req, res) => {
   try {
-    const today = todayStr();
-    const hostellers = await Student.find({
+    const studentFilter = {
       category: { $in: CATEGORY_ALIASES.hostellers },
       isActive: true,
-    });
+    };
+
+    if (req.admin.role === 'warden') {
+      const assignedHostel = await resolveAssignedHostel(req.admin);
+
+      if (!assignedHostel?._id) {
+        return res.json([]);
+      }
+
+      studentFilter.hostel = assignedHostel._id;
+    }
+
+    const today = todayStr();
+    const hostellers = await Student.find(studentFilter);
     const logs = await EntryLog.find({
       date: today,
       category: { $in: CATEGORY_ALIASES.hostellers },

@@ -60,6 +60,7 @@ export function SocketProvider({ children }) {
   const { admin } = useAuth();
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
+  const [socketError, setSocketError] = useState('');
   const [liveTickerItems, setLiveTickerItems] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [unreadAlerts, setUnreadAlerts] = useState(0);
@@ -94,6 +95,7 @@ export function SocketProvider({ children }) {
       socketRef.current?.disconnect();
       socketRef.current = null;
       setConnected(false);
+      setSocketError('');
       return undefined;
     }
 
@@ -108,12 +110,24 @@ export function SocketProvider({ children }) {
 
     socket.on('connect', () => {
       setConnected(true);
+      setSocketError('');
       if (admin.role === 'warden' && admin.id) {
         socket.emit('warden:join', admin.id);
       }
     });
 
     socket.on('disconnect', () => setConnected(false));
+    socket.on('connect_error', (error) => {
+      const message = error?.message || 'Unknown socket connection error';
+      console.error('Socket connect_error:', message, error);
+      setSocketError(message);
+      setConnected(false);
+    });
+    socket.on('error', (error) => {
+      const message = error?.message || 'Unknown socket runtime error';
+      console.error('Socket error:', message, error);
+      setSocketError(message);
+    });
 
     const eventNames = [
       'scan:live',
@@ -147,6 +161,8 @@ export function SocketProvider({ children }) {
 
     return () => {
       eventNames.forEach((eventName) => socket.off(eventName, handlers[eventName]));
+      socket.off('connect_error');
+      socket.off('error');
       socket.disconnect();
     };
   }, [admin]);
@@ -173,13 +189,14 @@ export function SocketProvider({ children }) {
     () => ({
       socket: socketRef.current,
       connected,
+      socketError,
       liveTickerItems,
       alerts,
       unreadAlerts,
       refreshAlerts,
       markAlertsRead,
     }),
-    [connected, liveTickerItems, alerts, unreadAlerts]
+    [connected, socketError, liveTickerItems, alerts, unreadAlerts]
   );
 
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;

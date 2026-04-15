@@ -1,7 +1,10 @@
 const Student = require('../models/Student');
 const EntryLog = require('../models/EntryLog');
 const UnauthorizedLog = require('../models/UnauthorizedLog');
+const AccessControlLog = require('../models/AccessControlLog');
+const AlertLog = require('../models/AlertLog');
 const { notifyParent } = require('../services/notification');
+const { emitScanBlocked, emitScanUnauthorized } = require('../services/socketService');
 const { isHosteller } = require('../utils/studentMeta');
 const { isPastCurfew } = require('../services/configService');
 
@@ -26,6 +29,15 @@ exports.processScan = async (req, res) => {
         date: todayStr(),
       });
 
+      emitScanUnauthorized({
+        gateName: '',
+        terminalNumber: null,
+        terminalLabel: '',
+        machineNumber: null,
+        time: new Date().toISOString(),
+        attemptNumber: 1,
+      });
+
       return res.status(404).json({
         authorized: false,
         message: 'UNAUTHORIZED: SAP ID not found in database',
@@ -35,6 +47,76 @@ exports.processScan = async (req, res) => {
 
     const today = todayStr();
     const now = new Date();
+
+    if (student.accessStatus === 'blocked') {
+      const blockReason = student.blockReason || 'Access blocked';
+
+      await UnauthorizedLog.create({
+        scannedValue: sapId,
+        date: today,
+        timestamp: now,
+        notes: `Blocked student attempted access: ${blockReason}`,
+      });
+
+      await AccessControlLog.create({
+        student: student._id,
+        action: 'blocked',
+        reason: blockReason,
+        performedBy: student.blockedBy || null,
+        timestamp: now,
+      });
+
+      await AlertLog.create({
+        type: 'blocked',
+        message: `${student.name} attempted access while blocked`,
+        metadata: {
+          studentId: student._id,
+          studentName: student.name,
+          sapId: student.sapId,
+          studentType: student.studentType,
+          blockReason,
+          time: now.toISOString(),
+        },
+      });
+
+      const attemptNumber = await UnauthorizedLog.countDocuments({ scannedValue: sapId, date: today });
+
+      emitScanUnauthorized({
+        gateName: '',
+        terminalNumber: null,
+        terminalLabel: '',
+        machineNumber: null,
+        time: now.toISOString(),
+        attemptNumber,
+      });
+
+      emitScanBlocked({
+        studentName: student.name,
+        sapId: student.sapId,
+        studentType: student.studentType,
+        hostelName: '',
+        gateName: '',
+        gateNumber: null,
+        terminalNumber: null,
+        terminalLabel: '',
+        machineNumber: null,
+        deviceSN: '',
+        time: now.toISOString(),
+        blockReason,
+      });
+
+      return res.status(403).json({
+        authorized: false,
+        blocked: true,
+        message: 'ACCESS DENIED: Student is blocked',
+        student: {
+          sapId: student.sapId,
+          name: student.name,
+          category: student.category,
+        },
+        blockReason,
+      });
+    }
 
     // Use the latest log for today so repeated entry/exit cycles toggle correctly.
     let log = await EntryLog.findOne({ sapId, date: today }).sort({ createdAt: -1 });

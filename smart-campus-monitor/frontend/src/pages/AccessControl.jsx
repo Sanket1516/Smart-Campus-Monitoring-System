@@ -7,7 +7,6 @@ import {
   HiOutlineFilter,
   HiOutlineLockClosed,
   HiOutlineRefresh,
-  HiOutlineSearch,
   HiOutlineShieldExclamation,
   HiOutlineUserRemove,
 } from 'react-icons/hi';
@@ -16,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import {
   blockStudentApi,
+  blockStudentsByTypeApi,
   getAccessLogsApi,
   getBlockedStudentsApi,
   getHostelsApi,
@@ -23,6 +23,7 @@ import {
   getTerminalStatusApi,
   getUnauthorizedLogsApi,
   unblockStudentApi,
+  unblockStudentsByTypeApi,
 } from '../services/api';
 
 const blockReasons = [
@@ -39,9 +40,18 @@ const tabs = [
 ];
 
 const createBlockForm = () => ({
+  mode: 'single',
+  studentType: 'day_scholar',
   studentId: '',
   reason: 'Discipline Issue',
   note: '',
+});
+
+const createUnblockForm = () => ({
+  mode: 'single',
+  studentType: 'day_scholar',
+  studentId: '',
+  reason: '',
 });
 
 const formatDateTime = (value) =>
@@ -63,8 +73,7 @@ export default function AccessControl() {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
-  const [unblockingStudent, setUnblockingStudent] = useState(null);
-  const [unblockReason, setUnblockReason] = useState('');
+  const [showUnblockModal, setShowUnblockModal] = useState(false);
   const [historyStudentId, setHistoryStudentId] = useState(null);
   const [historyByStudent, setHistoryByStudent] = useState({});
   const [filters, setFilters] = useState({
@@ -72,20 +81,58 @@ export default function AccessControl() {
     hostel: 'all',
     date: '',
   });
-  const [search, setSearch] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
   const [blockForm, setBlockForm] = useState(createBlockForm());
+  const [unblockSearch, setUnblockSearch] = useState('');
+  const [unblockForm, setUnblockForm] = useState(createUnblockForm());
 
   const searchableStudents = useMemo(
     () =>
       students.filter((student) => {
-        if (!search.trim()) return true;
-        const query = search.toLowerCase();
+        if (student.accessStatus === 'blocked') return false;
+        if (!studentSearch.trim()) return true;
+
+        const query = studentSearch.toLowerCase();
         return (
           student.name?.toLowerCase().includes(query) ||
           student.sapId?.toLowerCase().includes(query)
         );
       }),
-    [students, search]
+    [students, studentSearch]
+  );
+
+  const eligibleDayScholarCount = useMemo(
+    () => searchableStudents.filter((student) => student.studentType !== 'hosteller').length,
+    [searchableStudents]
+  );
+
+  const eligibleHostellerCount = useMemo(
+    () => searchableStudents.filter((student) => student.studentType === 'hosteller').length,
+    [searchableStudents]
+  );
+
+  const unblockableStudents = useMemo(
+    () =>
+      blockedStudents.filter((student) => {
+        if (!unblockSearch.trim()) return true;
+
+        const query = unblockSearch.toLowerCase();
+        return (
+          student.name?.toLowerCase().includes(query) ||
+          student.sapId?.toLowerCase().includes(query)
+        );
+      }),
+    [blockedStudents, unblockSearch]
+  );
+
+  const unblockableDayScholarCount = useMemo(
+    () => blockedStudents.filter((student) => student.studentType !== 'hosteller').length,
+    [blockedStudents]
+  );
+
+  const unblockableHostellerCount = useMemo(
+    () => blockedStudents.filter((student) => student.studentType === 'hosteller').length,
+    [blockedStudents]
   );
 
   const filteredBlockedStudents = useMemo(
@@ -223,32 +270,52 @@ export default function AccessControl() {
   const submitBlock = async (e) => {
     e.preventDefault();
 
-    if (!blockForm.studentId) {
-      toast.error('Select a student to block');
-      return;
-    }
-
     setSaving(true);
 
     try {
-      const res = await blockStudentApi(blockForm.studentId, {
-        reason: blockForm.reason,
-        note: blockForm.note,
-      });
+      let blockedCount = 0;
 
-      setBlockedStudents((current) => [res.data.student, ...current]);
+      if (blockForm.mode === 'single') {
+        if (!blockForm.studentId) {
+          toast.error('Select a student to block');
+          setSaving(false);
+          return;
+        }
+
+        const res = await blockStudentApi(blockForm.studentId, {
+          reason: blockForm.reason,
+          note: blockForm.note,
+        });
+
+        blockedCount = 1;
+        setBlockedStudents((current) => [res.data.student, ...current]);
+        toast.success('Student blocked successfully');
+      } else {
+        const res = await blockStudentsByTypeApi({
+          studentType: blockForm.studentType,
+          reason: blockForm.reason,
+          note: blockForm.note,
+        });
+
+        blockedCount = res.data.count;
+        setBlockedStudents((current) => [...res.data.students, ...current]);
+        toast.success(
+          `${res.data.count} ${blockForm.studentType === 'hosteller' ? 'hostellers' : 'day scholars'} blocked successfully`
+        );
+      }
+
       setSummary((current) =>
         current
           ? {
               ...current,
-              totalBlocked: (current.totalBlocked || 0) + 1,
-              blockedToday: (current.blockedToday || 0) + 1,
+              totalBlocked: (current.totalBlocked || 0) + blockedCount,
+              blockedToday: (current.blockedToday || 0) + blockedCount,
             }
           : current
       );
       setShowBlockModal(false);
       setBlockForm(createBlockForm());
-      toast.success('Student blocked successfully');
+      setStudentSearch('');
       loadAccessControl({ silent: true });
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to block student');
@@ -260,26 +327,50 @@ export default function AccessControl() {
   const submitUnblock = async (e) => {
     e.preventDefault();
 
-    if (!unblockingStudent) return;
-
     setSaving(true);
 
     try {
-      await unblockStudentApi(unblockingStudent._id, { reason: unblockReason });
-      setBlockedStudents((current) =>
-        current.filter((student) => student._id !== unblockingStudent._id)
-      );
+      let unblockedCount = 0;
+
+      if (unblockForm.mode === 'single') {
+        if (!unblockForm.studentId) {
+          toast.error('Select a student to unblock');
+          setSaving(false);
+          return;
+        }
+
+        await unblockStudentApi(unblockForm.studentId, { reason: unblockForm.reason });
+        unblockedCount = 1;
+        setBlockedStudents((current) =>
+          current.filter((student) => student._id !== unblockForm.studentId)
+        );
+        toast.success('Student unblocked successfully');
+      } else {
+        const res = await unblockStudentsByTypeApi({
+          studentType: unblockForm.studentType,
+          reason: unblockForm.reason,
+        });
+
+        unblockedCount = res.data.count;
+        setBlockedStudents((current) =>
+          current.filter((student) => !res.data.studentIds.includes(student._id))
+        );
+        toast.success(
+          `${res.data.count} ${unblockForm.studentType === 'hosteller' ? 'hostellers' : 'day scholars'} unblocked successfully`
+        );
+      }
+
       setSummary((current) =>
         current
           ? {
               ...current,
-              totalBlocked: Math.max(0, (current.totalBlocked || 0) - 1),
+              totalBlocked: Math.max(0, (current.totalBlocked || 0) - unblockedCount),
             }
           : current
       );
-      setUnblockingStudent(null);
-      setUnblockReason('');
-      toast.success('Student unblocked successfully');
+      setShowUnblockModal(false);
+      setUnblockForm(createUnblockForm());
+      setUnblockSearch('');
       loadAccessControl({ silent: true });
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to unblock student');
@@ -327,14 +418,24 @@ export default function AccessControl() {
             Refresh
           </button>
           {admin?.role === 'admin' && (
-            <button
-              type="button"
-              onClick={() => setShowBlockModal(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
-            >
-              <HiOutlineBan className="h-5 w-5" />
-              Block Student
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setShowBlockModal(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                <HiOutlineBan className="h-5 w-5" />
+                Block Student
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowUnblockModal(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+              >
+                <HiOutlineUserRemove className="h-5 w-5" />
+                Unblock Student
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -485,7 +586,16 @@ export default function AccessControl() {
                               {admin?.role === 'admin' && (
                                 <button
                                   type="button"
-                                  onClick={() => setUnblockingStudent(student)}
+                                  onClick={() => {
+                                    setUnblockForm({
+                                      mode: 'single',
+                                      studentType: student.studentType || 'day_scholar',
+                                      studentId: student._id,
+                                      reason: '',
+                                    });
+                                    setUnblockSearch(student.name || '');
+                                    setShowUnblockModal(true);
+                                  }}
                                   className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
                                 >
                                   <HiOutlineUserRemove className="h-4 w-4" />
@@ -614,7 +724,7 @@ export default function AccessControl() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-gray-800">Block Student</h2>
-                <p className="text-sm text-gray-500">Search a student, choose a reason, and apply the block.</p>
+                <p className="text-sm text-gray-500">Choose one student manually or use one of the bulk options.</p>
               </div>
               <button
                 type="button"
@@ -626,40 +736,116 @@ export default function AccessControl() {
             </div>
 
             <form onSubmit={submitBlock} className="space-y-4">
-              <div className="relative">
-                <HiOutlineSearch className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by student name or SAP ID"
-                  className="w-full rounded-xl border border-gray-300 py-3 pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-primary-500"
-                />
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBlockForm((current) => ({
+                      ...current,
+                      mode: 'single',
+                    }))
+                  }
+                  className={`rounded-2xl border px-4 py-4 text-left transition ${
+                    blockForm.mode === 'single'
+                      ? 'border-red-300 bg-red-50'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <p className="text-base font-semibold text-gray-800">Search And Pick Student</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Choose one student manually and block only that student.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBlockForm((current) => ({
+                      ...current,
+                      mode: 'bulk',
+                      studentType: 'day_scholar',
+                      studentId: '',
+                    }))
+                  }
+                  className={`rounded-2xl border px-4 py-4 text-left transition ${
+                    blockForm.mode === 'bulk' && blockForm.studentType === 'day_scholar'
+                      ? 'border-red-300 bg-red-50'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <p className="text-base font-semibold text-gray-800">Block All Dayscholars</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Apply the selected reason to every active day scholar who is not already blocked.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBlockForm((current) => ({
+                      ...current,
+                      mode: 'bulk',
+                      studentType: 'hosteller',
+                      studentId: '',
+                    }))
+                  }
+                  className={`rounded-2xl border px-4 py-4 text-left transition ${
+                    blockForm.mode === 'bulk' && blockForm.studentType === 'hosteller'
+                      ? 'border-red-300 bg-red-50'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <p className="text-base font-semibold text-gray-800">Block All Hostellers</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Apply the selected reason to every active hosteller who is not already blocked.
+                  </p>
+                </button>
               </div>
 
-              <div className="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-gray-200 p-3">
-                {searchableStudents.length === 0 ? (
-                  <p className="text-sm text-gray-500">No matching students found.</p>
-                ) : (
-                  searchableStudents.map((student) => (
-                    <button
-                      key={student._id}
-                      type="button"
-                      onClick={() => setBlockForm((current) => ({ ...current, studentId: student._id }))}
-                      className={`w-full rounded-xl border px-4 py-3 text-left ${
-                        blockForm.studentId === student._id
-                          ? 'border-red-300 bg-red-50'
-                          : 'border-gray-200 hover:bg-gray-50'
-                      }`}
-                    >
-                      <p className="font-medium text-gray-800">{student.name}</p>
-                      <p className="text-sm text-gray-500">
-                        {student.sapId} • {student.department}
-                      </p>
-                    </button>
-                  ))
-                )}
-              </div>
+              {blockForm.mode === 'single' ? (
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                    placeholder="Search by student name or SAP ID"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                  <div className="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-gray-200 p-3">
+                    {searchableStudents.length === 0 ? (
+                      <p className="text-sm text-gray-500">No matching students found.</p>
+                    ) : (
+                      searchableStudents.map((student) => (
+                        <button
+                          key={student._id}
+                          type="button"
+                          onClick={() =>
+                            setBlockForm((current) => ({
+                              ...current,
+                              studentId: student._id,
+                            }))
+                          }
+                          className={`w-full rounded-xl border px-4 py-3 text-left ${
+                            blockForm.studentId === student._id
+                              ? 'border-red-300 bg-red-50'
+                              : 'border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          <p className="font-medium text-gray-800">{student.name}</p>
+                          <p className="text-sm text-gray-500">
+                            {student.sapId} • {student.department} •{' '}
+                            {student.studentType === 'hosteller' ? 'Hosteller' : 'Day Scholar'}
+                          </p>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+                  {blockForm.studentType === 'hosteller'
+                    ? `${eligibleHostellerCount} hostellers are currently eligible for this bulk action.`
+                    : `${eligibleDayScholarCount} day scholars are currently eligible for this bulk action.`}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <select
@@ -688,11 +874,21 @@ export default function AccessControl() {
                   disabled={saving}
                   className="rounded-xl bg-red-600 px-5 py-3 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
                 >
-                  {saving ? 'Blocking...' : 'Block Student'}
+                  {saving
+                    ? 'Blocking...'
+                    : blockForm.mode === 'single'
+                      ? 'Block Student'
+                      : blockForm.studentType === 'hosteller'
+                      ? 'Block All Hostellers'
+                      : 'Block All Dayscholars'}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowBlockModal(false)}
+                  onClick={() => {
+                    setShowBlockModal(false);
+                    setBlockForm(createBlockForm());
+                    setStudentSearch('');
+                  }}
                   className="rounded-xl border border-gray-300 px-5 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
@@ -703,18 +899,132 @@ export default function AccessControl() {
         </div>
       )}
 
-      {unblockingStudent && (
+      {showUnblockModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-semibold text-gray-800">Unblock Student</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Provide a reason for unblocking {unblockingStudent.name}.
+              Choose a student or use the bulk options to remove the block.
             </p>
 
             <form onSubmit={submitUnblock} className="mt-5 space-y-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setUnblockForm((current) => ({
+                      ...current,
+                      mode: 'single',
+                    }))
+                  }
+                  className={`rounded-2xl border px-4 py-4 text-left transition ${
+                    unblockForm.mode === 'single'
+                      ? 'border-emerald-300 bg-emerald-50'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <p className="text-base font-semibold text-gray-800">Search And Pick Student</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Select one blocked student and unblock only that student.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setUnblockForm((current) => ({
+                      ...current,
+                      mode: 'bulk',
+                      studentType: 'day_scholar',
+                      studentId: '',
+                    }))
+                  }
+                  className={`rounded-2xl border px-4 py-4 text-left transition ${
+                    unblockForm.mode === 'bulk' && unblockForm.studentType === 'day_scholar'
+                      ? 'border-emerald-300 bg-emerald-50'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <p className="text-base font-semibold text-gray-800">Unblock All Dayscholars</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Remove the block for every currently blocked day scholar.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setUnblockForm((current) => ({
+                      ...current,
+                      mode: 'bulk',
+                      studentType: 'hosteller',
+                      studentId: '',
+                    }))
+                  }
+                  className={`rounded-2xl border px-4 py-4 text-left transition ${
+                    unblockForm.mode === 'bulk' && unblockForm.studentType === 'hosteller'
+                      ? 'border-emerald-300 bg-emerald-50'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <p className="text-base font-semibold text-gray-800">Unblock All Hostellers</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Remove the block for every currently blocked hosteller.
+                  </p>
+                </button>
+              </div>
+
+              {unblockForm.mode === 'single' ? (
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    value={unblockSearch}
+                    onChange={(e) => setUnblockSearch(e.target.value)}
+                    placeholder="Search by student name or SAP ID"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                  <div className="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-gray-200 p-3">
+                    {unblockableStudents.length === 0 ? (
+                      <p className="text-sm text-gray-500">No matching blocked students found.</p>
+                    ) : (
+                      unblockableStudents.map((student) => (
+                        <button
+                          key={student._id}
+                          type="button"
+                          onClick={() =>
+                            setUnblockForm((current) => ({
+                              ...current,
+                              studentId: student._id,
+                              studentType: student.studentType || 'day_scholar',
+                            }))
+                          }
+                          className={`w-full rounded-xl border px-4 py-3 text-left ${
+                            unblockForm.studentId === student._id
+                              ? 'border-emerald-300 bg-emerald-50'
+                              : 'border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          <p className="font-medium text-gray-800">{student.name}</p>
+                          <p className="text-sm text-gray-500">
+                            {student.sapId} • {student.department} •{' '}
+                            {student.studentType === 'hosteller' ? 'Hosteller' : 'Day Scholar'}
+                          </p>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+                  {unblockForm.studentType === 'hosteller'
+                    ? `${unblockableHostellerCount} hostellers are currently eligible for this bulk action.`
+                    : `${unblockableDayScholarCount} day scholars are currently eligible for this bulk action.`}
+                </div>
+              )}
+
               <textarea
-                value={unblockReason}
-                onChange={(e) => setUnblockReason(e.target.value)}
+                value={unblockForm.reason}
+                onChange={(e) =>
+                  setUnblockForm((current) => ({ ...current, reason: e.target.value }))
+                }
                 rows={4}
                 className="w-full rounded-xl border border-gray-300 px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-primary-500"
                 placeholder="Reason for unblocking"
@@ -726,13 +1036,20 @@ export default function AccessControl() {
                   disabled={saving}
                   className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
-                  {saving ? 'Saving...' : 'Confirm Unblock'}
+                  {saving
+                    ? 'Saving...'
+                    : unblockForm.mode === 'single'
+                      ? 'Confirm Unblock'
+                      : unblockForm.studentType === 'hosteller'
+                        ? 'Unblock All Hostellers'
+                        : 'Unblock All Dayscholars'}
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setUnblockingStudent(null);
-                    setUnblockReason('');
+                    setShowUnblockModal(false);
+                    setUnblockForm(createUnblockForm());
+                    setUnblockSearch('');
                   }}
                   className="rounded-xl border border-gray-300 px-5 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >

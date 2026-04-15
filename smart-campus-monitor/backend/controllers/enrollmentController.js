@@ -5,9 +5,14 @@ const TerminalConfig = require('../models/TerminalConfig');
 const {
   pushUserToDevice,
   pullTemplateFromDevice,
+  removeStudentFromDeviceAllocations,
   syncStudentToAllTerminals,
 } = require('../services/fingerprintService');
 const { createAuditLog } = require('../services/auditService');
+const {
+  getStudentAllocations,
+  reconcileStudentDeviceAllocations,
+} = require('../services/deviceAllocationService');
 
 const buildKey = () =>
   crypto.createHash('sha256').update(String(process.env.FP_SECRET || 'smart-campus-fp')).digest();
@@ -115,10 +120,11 @@ exports.confirmEnrollment = async (req, res) => {
       wardenApprovalRequired = false,
     } = req.body;
 
-    const [student, duplicateUser, enrollmentStation] = await Promise.all([
+    const [student, duplicateUser, enrollmentStation, previousAllocations] = await Promise.all([
       Student.findOne({ _id: studentId, isActive: true }).select('+fingerprintTemplate'),
       Student.findOne({ zktUserID, _id: { $ne: studentId } }).select('_id sapId name'),
       getEnrollmentStation(),
+      getStudentAllocations(studentId),
     ]);
 
     if (!student) {
@@ -130,6 +136,18 @@ exports.confirmEnrollment = async (req, res) => {
         message: `ZKT user ID is already assigned to ${duplicateUser.name} (${duplicateUser.sapId})`,
       });
     }
+
+    const previousState = {
+      zktUserID: student.zktUserID,
+      fingerprintEnrolled: student.fingerprintEnrolled,
+      fingerprintEnrolledAt: student.fingerprintEnrolledAt,
+      fingerprintTemplate: student.fingerprintTemplate,
+      studentType: student.studentType,
+      hostel: student.hostel,
+      roomNumber: student.roomNumber,
+      isHosteller: student.isHosteller,
+      wardenApprovalRequired: student.wardenApprovalRequired,
+    };
 
     let hostel = null;
     const normalizedType = studentType === 'hosteller' ? 'hosteller' : 'day_scholar';
@@ -150,25 +168,37 @@ exports.confirmEnrollment = async (req, res) => {
     const templateBuffer = await pullTemplateFromDevice(enrollmentStation.terminalIP, zktUserID);
     const encryptedTemplate = encryptTemplate(templateBuffer);
 
-    await Student.findByIdAndUpdate(
-      studentId,
-      {
-        $set: {
-          zktUserID: Number(zktUserID),
-          fingerprintEnrolled: true,
-          fingerprintEnrolledAt: new Date(),
-          fingerprintTemplate: encryptedTemplate,
-          studentType: normalizedType,
-          hostel: isHosteller ? hostel._id : null,
-          roomNumber: isHosteller ? roomNumber.trim() : '',
-          isHosteller,
-          wardenApprovalRequired: isHosteller ? Boolean(wardenApprovalRequired) : false,
-        },
+    await Student.findByIdAndUpdate(studentId, {
+      $set: {
+        zktUserID: Number(zktUserID),
+        fingerprintEnrolled: true,
+        fingerprintEnrolledAt: new Date(),
+        fingerprintTemplate: encryptedTemplate,
+        studentType: normalizedType,
+        hostel: isHosteller ? hostel._id : null,
+        roomNumber: isHosteller ? roomNumber.trim() : '',
+        isHosteller,
+        wardenApprovalRequired: isHosteller ? Boolean(wardenApprovalRequired) : false,
       },
-      { new: false, runValidators: true }
-    );
+    });
 
-    const updatedStudent = await sanitizeStudent(studentId);
+    let updatedStudent = await sanitizeStudent(studentId);
+    let allocationResult;
+
+    try {
+      allocationResult = await reconcileStudentDeviceAllocations(updatedStudent);
+    } catch (allocationError) {
+      await Student.findByIdAndUpdate(studentId, { $set: previousState }, { runValidators: true });
+      updatedStudent = await sanitizeStudent(studentId);
+      throw allocationError;
+    }
+
+    if (allocationResult.removedAllocations.length) {
+      removeStudentFromDeviceAllocations(allocationResult.removedAllocations).catch((cleanupError) => {
+        console.error('Failed to remove obsolete device allocations:', cleanupError.message);
+      });
+    }
+
     const syncResult = await syncStudentToAllTerminals(updatedStudent);
 
     await createAuditLog({
@@ -183,6 +213,7 @@ exports.confirmEnrollment = async (req, res) => {
         studentType: normalizedType,
         hostel: hostel?._id || null,
         roomNumber: isHosteller ? roomNumber.trim() : '',
+        deviceAllocations: allocationResult.allocations,
       },
       ipAddress: req.ip,
     });
@@ -190,6 +221,8 @@ exports.confirmEnrollment = async (req, res) => {
     res.json({
       success: true,
       student: buildEnrollmentSummary(updatedStudent),
+      allocations: allocationResult.allocations,
+      previousAllocations,
       sync: syncResult,
     });
   } catch (error) {
@@ -248,6 +281,19 @@ exports.updateEnrollmentType = async (req, res) => {
     );
 
     const updatedStudent = await sanitizeStudent(studentId);
+    let allocationResult = null;
+
+    if (updatedStudent.fingerprintEnrolled) {
+      allocationResult = await reconcileStudentDeviceAllocations(updatedStudent);
+
+      if (allocationResult.removedAllocations.length) {
+        removeStudentFromDeviceAllocations(allocationResult.removedAllocations).catch((error) => {
+          console.error('Failed to remove obsolete enrollment allocations:', error.message);
+        });
+      }
+
+      await syncStudentToAllTerminals(updatedStudent);
+    }
 
     await createAuditLog({
       admin: req.admin,
@@ -261,6 +307,7 @@ exports.updateEnrollmentType = async (req, res) => {
         roomNumber: isHosteller ? roomNumber.trim() : '',
         isHosteller,
         wardenApprovalRequired: isHosteller ? Boolean(wardenApprovalRequired) : false,
+        deviceAllocations: allocationResult?.allocations || null,
       },
       ipAddress: req.ip,
     });
@@ -268,6 +315,7 @@ exports.updateEnrollmentType = async (req, res) => {
     res.json({
       success: true,
       student: buildEnrollmentSummary(updatedStudent),
+      allocations: allocationResult?.allocations || [],
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

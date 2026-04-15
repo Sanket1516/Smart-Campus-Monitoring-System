@@ -1,34 +1,78 @@
 const Student = require('../models/Student');
+const DeviceAllocation = require('../models/DeviceAllocation');
 const {
   normalizeCategory,
   normalizeCourse,
   normalizeDepartment,
 } = require('../utils/studentMeta');
 const { createAuditLog } = require('../services/auditService');
+const { getStudentAllocations, reconcileStudentDeviceAllocations } = require('../services/deviceAllocationService');
+const { removeStudentFromDeviceAllocations, syncStudentToAllTerminals } = require('../services/fingerprintService');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const fs = require('fs');
 const path = require('path');
 
-const normalizeStudentPayload = (payload = {}) => ({
-  ...payload,
-  ...(payload.category !== undefined ? { category: normalizeCategory(payload.category) } : {}),
-  ...(payload.course !== undefined ? { course: normalizeCourse(payload.course) } : {}),
-  ...(payload.department !== undefined
-    ? { department: normalizeDepartment(payload.department) }
-    : {}),
-});
+const getStudentsQuery = (filter = {}) =>
+  Student.find(filter).populate('hostel', 'name code warden wardenEmail wardenPhone');
+
+const getStudentByFilter = (filter = {}) =>
+  Student.findOne(filter).populate('hostel', 'name code warden wardenEmail wardenPhone');
+
+const handleStudentMutationError = (res, err) => {
+  if (err?.code === 11000) {
+    if (err.keyPattern?.sapId) {
+      return res.status(400).json({ message: 'Student with this SAP ID already exists' });
+    }
+
+    return res.status(400).json({ message: 'Duplicate student data detected' });
+  }
+
+  if (err?.name === 'ValidationError') {
+    return res.status(400).json({ message: err.message });
+  }
+
+  return res.status(500).json({ message: err.message });
+};
+
+const normalizeStudentPayload = (payload = {}) => {
+  const normalizedPayload = {
+    ...payload,
+    ...(payload.category !== undefined ? { category: normalizeCategory(payload.category) } : {}),
+    ...(payload.course !== undefined ? { course: normalizeCourse(payload.course) } : {}),
+    ...(payload.department !== undefined
+      ? { department: normalizeDepartment(payload.department) }
+      : {}),
+  };
+
+  if (normalizedPayload.category !== undefined) {
+    const isHosteller = normalizedPayload.category === 'hostellers';
+
+    normalizedPayload.studentType = isHosteller ? 'hosteller' : 'day_scholar';
+    normalizedPayload.isHosteller = isHosteller;
+    normalizedPayload.wardenApprovalRequired = isHosteller
+      ? Boolean(payload.wardenApprovalRequired ?? true)
+      : false;
+
+    if (!isHosteller) {
+      normalizedPayload.hostel = null;
+      normalizedPayload.roomNumber = '';
+    }
+  }
+
+  return normalizedPayload;
+};
 
 // GET /api/students/:sapId
 exports.getStudentBySapId = async (req, res) => {
   try {
-    const student = await Student.findOne({ sapId: req.params.sapId });
+    const student = await getStudentByFilter({ sapId: req.params.sapId });
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
     }
     res.json(student);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    handleStudentMutationError(res, err);
   }
 };
 
@@ -46,7 +90,7 @@ exports.getAllStudents = async (req, res) => {
       ];
     }
 
-    const students = await Student.find(filter)
+    const students = await getStudentsQuery(filter)
       .sort({ name: 1 })
       .skip((page - 1) * limit)
       .limit(Number(limit));
@@ -55,7 +99,7 @@ exports.getAllStudents = async (req, res) => {
 
     res.json({ students, total, page: Number(page), pages: Math.ceil(total / limit) });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    handleStudentMutationError(res, err);
   }
 };
 
@@ -63,6 +107,7 @@ exports.getAllStudents = async (req, res) => {
 exports.createStudent = async (req, res) => {
   try {
     const student = await Student.create(normalizeStudentPayload(req.body));
+    const populatedStudent = await getStudentByFilter({ _id: student._id });
 
     await createAuditLog({
       admin: req.admin,
@@ -70,11 +115,11 @@ exports.createStudent = async (req, res) => {
       entity: 'Student',
       entityId: student._id,
       oldValue: null,
-      newValue: student.toObject(),
+      newValue: populatedStudent.toObject(),
       ipAddress: req.ip,
     });
 
-    res.status(201).json(student);
+    res.status(201).json({ student: populatedStudent });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -88,11 +133,27 @@ exports.updateStudent = async (req, res) => {
       return res.status(404).json({ message: 'Student not found' });
     }
 
-    const student = await Student.findOneAndUpdate(
+    await Student.findOneAndUpdate(
       { sapId: req.params.sapId },
       normalizeStudentPayload(req.body),
-      { new: true, runValidators: true }
+      { runValidators: true }
     );
+
+    const student = await getStudentByFilter({ sapId: req.params.sapId });
+
+    let allocationResult = null;
+
+    if (student.fingerprintEnrolled) {
+      allocationResult = await reconcileStudentDeviceAllocations(student);
+
+      if (allocationResult.removedAllocations.length) {
+        removeStudentFromDeviceAllocations(allocationResult.removedAllocations).catch((error) => {
+          console.error('Failed to remove obsolete student allocations:', error.message);
+        });
+      }
+
+      await syncStudentToAllTerminals(student);
+    }
 
     await createAuditLog({
       admin: req.admin,
@@ -100,7 +161,10 @@ exports.updateStudent = async (req, res) => {
       entity: 'Student',
       entityId: student._id,
       oldValue: previousStudent,
-      newValue: student.toObject(),
+      newValue: {
+        ...student.toObject(),
+        deviceAllocations: allocationResult?.allocations || null,
+      },
       ipAddress: req.ip,
     });
 
@@ -118,6 +182,8 @@ exports.deleteStudent = async (req, res) => {
       return res.status(404).json({ message: 'Student not found' });
     }
 
+    const previousAllocations = await getStudentAllocations(previousStudent._id);
+
     const student = await Student.findOneAndUpdate(
       { sapId: req.params.sapId },
       { isActive: false },
@@ -130,9 +196,19 @@ exports.deleteStudent = async (req, res) => {
       entity: 'Student',
       entityId: student._id,
       oldValue: previousStudent,
-      newValue: student.toObject(),
+      newValue: {
+        ...student.toObject(),
+        deviceAllocations: previousAllocations,
+      },
       ipAddress: req.ip,
     });
+
+    if (previousAllocations.length) {
+      await DeviceAllocation.deleteMany({ studentId: student._id });
+      removeStudentFromDeviceAllocations(previousAllocations).catch((error) => {
+        console.error('Failed to remove device users for deactivated student:', error.message);
+      });
+    }
 
     res.json({ message: 'Student deactivated' });
   } catch (err) {

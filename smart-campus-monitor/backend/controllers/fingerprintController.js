@@ -1,4 +1,5 @@
 const Student = require('../models/Student');
+const DeviceAllocation = require('../models/DeviceAllocation');
 const EntryLog = require('../models/EntryLog');
 const UnauthorizedLog = require('../models/UnauthorizedLog');
 const TerminalConfig = require('../models/TerminalConfig');
@@ -101,6 +102,54 @@ const processEntryExit = async (student, terminal, now) => {
   return { action, log };
 };
 
+const populateStudentForScan = (studentId) =>
+  Student.findOne({
+    _id: studentId,
+    isActive: true,
+  })
+    .populate({
+      path: 'hostel',
+      select: 'name warden',
+      populate: {
+        path: 'warden',
+        select: 'name email',
+      },
+    })
+    .populate('blockedBy', 'name');
+
+const resolveStudentForTerminalScan = async (terminal, userId) => {
+  const allocation = await DeviceAllocation.findOne({
+    deviceId: terminal._id,
+    localUserId: Number(userId),
+  })
+    .select('studentId localUserId')
+    .lean();
+
+  if (allocation?.studentId) {
+    return populateStudentForScan(allocation.studentId);
+  }
+
+  const terminalHasAllocations = await DeviceAllocation.exists({ deviceId: terminal._id });
+
+  if (terminalHasAllocations) {
+    return null;
+  }
+
+  return Student.findOne({
+    zktUserID: Number(userId),
+    isActive: true,
+  })
+    .populate({
+      path: 'hostel',
+      select: 'name warden',
+      populate: {
+        path: 'warden',
+        select: 'name email',
+      },
+    })
+    .populate('blockedBy', 'name');
+};
+
 // POST /api/fingerprint/scan
 exports.processFingerprintScan = async (req, res) => {
   try {
@@ -149,19 +198,7 @@ exports.processFingerprintScan = async (req, res) => {
     }
 
     const terminalPayload = buildTerminalPayload(terminal, { deviceName });
-    const student = await Student.findOne({
-      zktUserID: Number(userId),
-      isActive: true,
-    })
-      .populate({
-        path: 'hostel',
-        select: 'name warden',
-        populate: {
-          path: 'warden',
-          select: 'name email',
-        },
-      })
-      .populate('blockedBy', 'name');
+    const student = await resolveStudentForTerminalScan(terminal, userId);
 
     if (!student) {
       const today = formatISTDate(now);

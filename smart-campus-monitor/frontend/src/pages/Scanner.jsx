@@ -181,6 +181,14 @@ export default function Scanner() {
           setLastScan(err.response.data);
           await playSound('unauthorized');
           toast.error('UNAUTHORIZED ID scanned!');
+        } else if (err.response?.status === 403 && err.response?.data?.blocked) {
+          setLastScan(err.response.data);
+          await playSound('unauthorized');
+          toast.error(
+            err.response?.data?.blockReason
+              ? `ACCESS DENIED: ${err.response.data.blockReason}`
+              : 'ACCESS DENIED: Student is blocked'
+          );
         } else {
           toast.error('Scan failed: ' + (err.response?.data?.message || err.message));
         }

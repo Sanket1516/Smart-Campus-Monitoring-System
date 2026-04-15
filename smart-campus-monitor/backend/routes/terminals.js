@@ -37,6 +37,24 @@ const terminalValidators = [
   body('gateName').trim().notEmpty().withMessage('Gate name is required'),
   body('terminalLabel').optional({ values: 'falsy' }).trim(),
   body('location').optional({ values: 'falsy' }).trim(),
+  body('terminalType')
+    .optional({ values: 'falsy' })
+    .customSanitizer((value) => String(value).trim().toUpperCase())
+    .isIn(TerminalConfig.TERMINAL_TYPES)
+    .withMessage(`Terminal type must be one of ${TerminalConfig.TERMINAL_TYPES.join(', ')}`),
+  body('hostel').optional({ values: 'falsy' }).isMongoId().withMessage('Hostel must be a valid id'),
+  body('maxLocalUsers')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 1, max: 65535 })
+    .withMessage('Maximum local users must be between 1 and 65535')
+    .toInt(),
+  body('hostel').custom((value, { req }) => {
+    if (String(req.body.terminalType || '').toUpperCase() === 'HOSTEL' && !value) {
+      throw new Error('Hostel terminal must be linked to a hostel');
+    }
+
+    return true;
+  }),
   body('terminalIP')
     .optional({ values: 'falsy' })
     .trim()
@@ -52,6 +70,24 @@ const terminalUpdateValidators = [
   body('gateName').trim().notEmpty().withMessage('Gate name is required'),
   body('terminalLabel').optional({ values: 'falsy' }).trim(),
   body('location').optional({ values: 'falsy' }).trim(),
+  body('terminalType')
+    .optional({ values: 'falsy' })
+    .customSanitizer((value) => String(value).trim().toUpperCase())
+    .isIn(TerminalConfig.TERMINAL_TYPES)
+    .withMessage(`Terminal type must be one of ${TerminalConfig.TERMINAL_TYPES.join(', ')}`),
+  body('hostel').optional({ values: 'falsy' }).isMongoId().withMessage('Hostel must be a valid id'),
+  body('maxLocalUsers')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 1, max: 65535 })
+    .withMessage('Maximum local users must be between 1 and 65535')
+    .toInt(),
+  body('hostel').custom((value, { req }) => {
+    if (String(req.body.terminalType || '').toUpperCase() === 'HOSTEL' && !value) {
+      throw new Error('Hostel terminal must be linked to a hostel');
+    }
+
+    return true;
+  }),
   body('terminalIP')
     .optional({ values: 'falsy' })
     .trim()
