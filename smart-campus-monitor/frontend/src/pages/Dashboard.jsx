@@ -109,6 +109,34 @@ const groupTerminalStatuses = (terminals) => {
   }, {});
 };
 
+const STUDENT_GROUP_META = {
+  currentlyInside: {
+    key: 'currentlyInside',
+    title: 'Inside Campus Students',
+    empty: 'No students are currently inside.',
+  },
+  enteredToday: {
+    key: 'enteredToday',
+    title: 'Entries Today',
+    empty: 'No students have entered today.',
+  },
+  exitedToday: {
+    key: 'exitedToday',
+    title: 'Exits Today',
+    empty: 'No students have exited today.',
+  },
+  hostellersOutside: {
+    key: 'hostellersOutside',
+    title: 'Hostellers Outside',
+    empty: 'No hostellers are currently outside.',
+  },
+  lateReturns: {
+    key: 'lateReturns',
+    title: 'Late Returns Today',
+    empty: 'No late return records today.',
+  },
+};
+
 export default function Dashboard() {
   const { admin } = useAuth();
   const { socket } = useSocket();
@@ -120,6 +148,7 @@ export default function Dashboard() {
   const [dashboard, setDashboard] = useState(null);
   const [hourly, setHourly] = useState(null);
   const [terminals, setTerminals] = useState([]);
+  const [activeStudentGroup, setActiveStudentGroup] = useState('currentlyInside');
 
   const selectedHostel = useMemo(
     () => hostels.find((hostel) => hostel._id === selectedHostelId) || null,
@@ -398,6 +427,10 @@ export default function Dashboard() {
   );
 
   const groupedTerminals = useMemo(() => groupTerminalStatuses(terminals), [terminals]);
+  const studentGroups = dashboard?.studentGroups || {};
+  const selectedGroupMeta =
+    STUDENT_GROUP_META[activeStudentGroup] || STUDENT_GROUP_META.currentlyInside;
+  const selectedStudents = studentGroups[selectedGroupMeta.key] || [];
 
   if (loading) {
     return (
@@ -450,13 +483,137 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        <StatCard title="Inside Campus" value={today.currentlyInside || 0} icon={HiOutlineOfficeBuilding} color="green" />
-        <StatCard title="Entries Today" value={today.enteredToday || 0} icon={HiOutlineLogin} color="blue" />
-        <StatCard title="Exits Today" value={today.exitedToday || 0} icon={HiOutlineLogout} color="indigo" />
+        <StatCard
+          title="Inside Campus"
+          value={today.currentlyInside || 0}
+          icon={HiOutlineOfficeBuilding}
+          color="green"
+          onClick={() => setActiveStudentGroup('currentlyInside')}
+          active={activeStudentGroup === 'currentlyInside'}
+        />
+        <StatCard
+          title="Entries Today"
+          value={today.enteredToday || 0}
+          icon={HiOutlineLogin}
+          color="blue"
+          onClick={() => setActiveStudentGroup('enteredToday')}
+          active={activeStudentGroup === 'enteredToday'}
+        />
+        <StatCard
+          title="Exits Today"
+          value={today.exitedToday || 0}
+          icon={HiOutlineLogout}
+          color="indigo"
+          onClick={() => setActiveStudentGroup('exitedToday')}
+          active={activeStudentGroup === 'exitedToday'}
+        />
         <StatCard title="Unauthorized" value={today.unauthorizedAttempts || 0} icon={HiOutlineExclamationCircle} color="yellow" />
         <StatCard title="Blocked Attempts" value={today.blockedAttemptsToday || 0} icon={HiOutlineShieldExclamation} color="red" />
         <StatCard title="Active Approvals" value={today.activeHostellerApprovals || 0} icon={HiOutlineUserGroup} color="purple" />
       </div>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800">{selectedGroupMeta.title}</h2>
+            <p className="text-sm text-gray-500">
+              Count: {selectedStudents.length}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveStudentGroup('currentlyInside')}
+              className={`rounded-full px-3 py-1.5 ${
+                activeStudentGroup === 'currentlyInside'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Inside
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveStudentGroup('enteredToday')}
+              className={`rounded-full px-3 py-1.5 ${
+                activeStudentGroup === 'enteredToday'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Entered
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveStudentGroup('exitedToday')}
+              className={`rounded-full px-3 py-1.5 ${
+                activeStudentGroup === 'exitedToday'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Exited
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveStudentGroup('hostellersOutside')}
+              className={`rounded-full px-3 py-1.5 ${
+                activeStudentGroup === 'hostellersOutside'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Hostellers Outside
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveStudentGroup('lateReturns')}
+              className={`rounded-full px-3 py-1.5 ${
+                activeStudentGroup === 'lateReturns'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Late Returns
+            </button>
+          </div>
+        </div>
+
+        {selectedStudents.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500">
+            {selectedGroupMeta.empty}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-gray-500">
+                  <th className="px-3 py-2 font-semibold">Name</th>
+                  <th className="px-3 py-2 font-semibold">SAP ID</th>
+                  <th className="px-3 py-2 font-semibold">Department</th>
+                  <th className="px-3 py-2 font-semibold">Year</th>
+                  <th className="px-3 py-2 font-semibold">Category</th>
+                  <th className="px-3 py-2 font-semibold">Status</th>
+                  <th className="px-3 py-2 font-semibold">Last Scan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedStudents.map((student) => (
+                  <tr key={`${activeStudentGroup}-${student.sapId}`} className="border-b border-gray-100">
+                    <td className="px-3 py-2 font-medium text-gray-800">{student.name || '-'}</td>
+                    <td className="px-3 py-2 text-gray-700">{student.sapId || '-'}</td>
+                    <td className="px-3 py-2 text-gray-700">{student.department || '-'}</td>
+                    <td className="px-3 py-2 text-gray-700">{student.year || '-'}</td>
+                    <td className="px-3 py-2 text-gray-700">{student.category || '-'}</td>
+                    <td className="px-3 py-2 text-gray-700">{student.latestStatus || '-'}</td>
+                    <td className="px-3 py-2 text-gray-700">{formatDateTime(student.lastScan)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {dashboard.hostelMetrics && (
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
