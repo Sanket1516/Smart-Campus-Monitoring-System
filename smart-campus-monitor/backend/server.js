@@ -26,6 +26,7 @@ const accessRoutes = require('./routes/access');
 const hostellerRoutes = require('./routes/hosteller');
 const liveRoutes = require('./routes/live');
 const settingsRoutes = require('./routes/settings');
+const aiQueryRoutes = require('./routes/aiQuery');
 const { startTerminalJobs } = require('./jobs/terminalJobs');
 const { startHostellerJobs } = require('./jobs/hostellerJobs');
 const { attachSocketServer } = require('./socket');
@@ -79,6 +80,7 @@ app.use('/api/access', accessRoutes);
 app.use('/api/hosteller', hostellerRoutes);
 app.use('/api/live', liveRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/ai-query', aiQueryRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

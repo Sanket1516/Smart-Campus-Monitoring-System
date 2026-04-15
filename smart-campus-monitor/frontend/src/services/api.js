@@ -124,5 +124,6 @@ export const getHostelHostellerRequestsApi = (hostelId) =>
   api.get(`/hosteller/hostel/${hostelId}`);
 export const getPublicHostellerStatusApi = (sapId) => api.get(`/hosteller/public/${sapId}`);
 export const getPublicLiveDashboardApi = () => api.get('/live');
+export const aiQueryApi = (message) => api.post('/ai-query', { message });
 
 export default api;

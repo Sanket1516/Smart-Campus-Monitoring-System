@@ -26,6 +26,7 @@ import {
 import { Bar, Line } from 'react-chartjs-2';
 import toast from 'react-hot-toast';
 import StatCard from '../components/StatCard';
+import DashboardChatWidget from '../components/DashboardChatWidget';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -623,6 +624,7 @@ export default function Dashboard() {
           </div>
         </section>
       </div>
+      <DashboardChatWidget />
     </div>
   );
 }

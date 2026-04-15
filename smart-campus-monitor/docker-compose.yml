@@ -3,8 +3,6 @@ services:
     image: mongo:7
     container_name: smart-campus-mongo
     restart: unless-stopped
-    ports:
-      - "27017:27017"
     volumes:
       - mongo-data:/data/db
     networks:
@@ -18,6 +16,23 @@ services:
       retries: 5
       start_period: 10s
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: smart-campus-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - campus-network
+    expose:
+      - "11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
   backend:
     build:
       context: ./backend
@@ -29,6 +44,8 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
     networks:
       - campus-network
     env_file:
@@ -36,6 +53,9 @@ services:
     environment:
       NODE_ENV: production
       MONGO_URI: mongodb://mongodb:27017/smart_campus
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: gemma:2b
+      AI_TIMEOUT_MS: 1800
       CLIENT_URL: http://localhost
       TZ: Asia/Kolkata
       # FP_SECRET should be set in ./backend/.env for security
@@ -60,4 +80,6 @@ networks:
 
 volumes:
   mongo-data:
+    driver: local
+  ollama-data:
     driver: local
