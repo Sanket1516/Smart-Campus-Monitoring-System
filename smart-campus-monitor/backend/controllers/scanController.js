@@ -5,7 +5,12 @@ const AccessControlLog = require('../models/AccessControlLog');
 const AlertLog = require('../models/AlertLog');
 const HostellerRequest = require('../models/HostellerRequest');
 const { notifyParent } = require('../services/notification');
-const { emitScanBlocked, emitScanUnauthorized } = require('../services/socketService');
+const {
+  emitScanBlocked,
+  emitScanUnauthorized,
+  emitScanLive,
+  emitWardenRequired,
+} = require('../services/socketService');
 const { isHosteller } = require('../utils/studentMeta');
 const { isPastCurfew } = require('../services/configService');
 
@@ -21,7 +26,9 @@ exports.processScan = async (req, res) => {
       return res.status(400).json({ message: 'SAP ID is required' });
     }
 
-    const student = await Student.findOne({ sapId, isActive: true }).select('+hostel');
+    const student = await Student.findOne({ sapId, isActive: true })
+      .select('+hostel')
+      .populate('hostel', 'name warden');
 
     // Unauthorized scan
     if (!student) {
@@ -95,7 +102,7 @@ exports.processScan = async (req, res) => {
         studentName: student.name,
         sapId: student.sapId,
         studentType: student.studentType,
-        hostelName: '',
+        hostelName: student.hostel?.name || '',
         gateName: '',
         gateNumber: null,
         terminalNumber: null,
@@ -128,6 +135,20 @@ exports.processScan = async (req, res) => {
       });
 
       if (!activeRequest) {
+        emitWardenRequired({
+          studentName: student.name,
+          sapId: student.sapId,
+          hostelName: student.hostel?.name || '',
+          wardenName: student.hostel?.warden?.name || '',
+          gateName: '',
+          gateNumber: null,
+          terminalNumber: null,
+          terminalLabel: '',
+          machineNumber: null,
+          deviceSN: '',
+          time: now.toISOString(),
+        });
+
         return res.status(403).json({
           authorized: false,
           wardenRequired: true,
@@ -164,7 +185,7 @@ exports.processScan = async (req, res) => {
 
       // Check late return for hostellers
       if (isHosteller(student.category)) {
-        if (await isPastCurfew(now, student.hostel)) {
+        if (await isPastCurfew(now, student.hostel?._id || student.hostel)) {
           log.lateReturn = true;
         }
       }
@@ -183,6 +204,23 @@ exports.processScan = async (req, res) => {
       });
       action = 'entry';
     }
+
+    emitScanLive({
+      studentName: student.name,
+      sapId: student.sapId,
+      photo: student.photoUrl || '',
+      studentType: student.studentType,
+      hostelName: student.hostel?.name || '',
+      gateName: '',
+      gateNumber: null,
+      terminalNumber: null,
+      terminalLabel: '',
+      machineNumber: null,
+      deviceSN: '',
+      type: action,
+      time: now.toISOString(),
+      department: student.department,
+    });
 
     // Send parent notification (fire and forget)
     notifyParent(student, action, now).catch((err) =>
