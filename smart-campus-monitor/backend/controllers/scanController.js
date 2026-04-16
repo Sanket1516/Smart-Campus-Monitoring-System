@@ -3,6 +3,7 @@ const EntryLog = require('../models/EntryLog');
 const UnauthorizedLog = require('../models/UnauthorizedLog');
 const AccessControlLog = require('../models/AccessControlLog');
 const AlertLog = require('../models/AlertLog');
+const HostellerRequest = require('../models/HostellerRequest');
 const { notifyParent } = require('../services/notification');
 const { emitScanBlocked, emitScanUnauthorized } = require('../services/socketService');
 const { isHosteller } = require('../utils/studentMeta');
@@ -118,6 +119,28 @@ exports.processScan = async (req, res) => {
       });
     }
 
+    let activeRequest = null;
+    if (isHosteller(student.category) && student.wardenApprovalRequired) {
+      activeRequest = await HostellerRequest.findOne({
+        student: student._id,
+        status: 'approved',
+        accessValidUntil: { $gt: now },
+      });
+
+      if (!activeRequest) {
+        return res.status(403).json({
+          authorized: false,
+          wardenRequired: true,
+          message: 'WARDEN APPROVAL REQUIRED: Hosteller request not approved',
+          student: {
+            sapId: student.sapId,
+            name: student.name,
+            category: student.category,
+          },
+        });
+      }
+    }
+
     // Use the latest log for today so repeated entry/exit cycles toggle correctly.
     let log = await EntryLog.findOne({ sapId, date: today }).sort({ createdAt: -1 });
 
@@ -165,6 +188,22 @@ exports.processScan = async (req, res) => {
     notifyParent(student, action, now).catch((err) =>
       console.error('Notification error:', err.message)
     );
+
+    if (activeRequest) {
+      if (action === 'exit') {
+        activeRequest.usedForExit = true;
+      }
+
+      if (action === 'entry') {
+        activeRequest.usedForEntry = true;
+
+        if (activeRequest.usedForExit) {
+          activeRequest.status = 'completed';
+        }
+      }
+
+      await activeRequest.save();
+    }
 
     res.json({
       authorized: true,

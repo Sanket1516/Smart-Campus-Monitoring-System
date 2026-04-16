@@ -635,7 +635,8 @@ npm run seed
 This will:
 - Clear the students collection only
 - Insert 14 sample students (SAP IDs 70552000002--70552000014 and 70552300067)
-- Keep existing admins, hostels, logs, and settings unchanged
+- Keep existing admins, hostels, and settings unchanged
+- Add an `entered` log for each hosteller for today if needed (does not clear existing logs)
 - Require hostels with codes `BHA` and `GHB` to already exist
 
 ### Step 6 -- Start the Backend Server
@@ -750,7 +751,7 @@ npm run seed
 | 70552000013 | Meera Joshi     | Hosteller   | Engineering   | Computer Science    | 2    |
 | 70552000014 | Ishita Shah     | Hosteller   | Engineering   | Computer Science    | 2    |
 
-**Note:** The seed script does not create or modify admin/staff accounts, hostels, or logs.
+**Note:** The seed script does not create or modify admin/staff accounts or hostels. It inserts an `entered` log for each hosteller for today if one does not already exist.
 
 ---
 

@@ -177,13 +177,12 @@ export default function Scanner() {
           toast.success(`${res.data.student.name} - ${action}`);
         }
       } catch (err) {
+        await playSound('unauthorized');
         if (err.response?.status === 404) {
           setLastScan(err.response.data);
-          await playSound('unauthorized');
           toast.error('UNAUTHORIZED ID scanned!');
         } else if (err.response?.status === 403 && err.response?.data?.blocked) {
           setLastScan(err.response.data);
-          await playSound('unauthorized');
           toast.error(
             err.response?.data?.blockReason
               ? `ACCESS DENIED: ${err.response.data.blockReason}`

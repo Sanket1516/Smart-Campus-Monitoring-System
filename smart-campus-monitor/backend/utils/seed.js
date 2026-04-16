@@ -8,6 +8,14 @@ const mongoose = require('mongoose');
 const connectDB = require('../config/db');
 const Student = require('../models/Student');
 const Hostel = require('../models/Hostel');
+const EntryLog = require('../models/EntryLog');
+
+const formatDateLocal = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const students = [
   // Day Scholars
@@ -257,12 +265,14 @@ const seed = async () => {
           roomNumber: `${Math.floor(Math.random() * 50) + 101}`,
           studentType: 'hosteller',
           isHosteller: true,
+          wardenApprovalRequired: true,
         };
       }
       return {
         ...student,
         studentType: 'day_scholar',
         isHosteller: false,
+        wardenApprovalRequired: false,
       };
     });
     
@@ -280,6 +290,45 @@ const seed = async () => {
         });
       }
       throw studentError; // Re-throw to stop the seed
+    }
+
+    console.log('Marking hostellers as inside...');
+    const hostellerSapIds = studentsWithHostels
+      .filter((student) => student.studentType === 'hosteller')
+      .map((student) => student.sapId);
+    const today = formatDateLocal();
+    const existingLogs = await EntryLog.find({
+      sapId: { $in: hostellerSapIds },
+      date: today,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    const latestLogBySapId = new Map();
+    for (const log of existingLogs) {
+      if (!latestLogBySapId.has(log.sapId)) {
+        latestLogBySapId.set(log.sapId, log);
+      }
+    }
+    const insideLogs = [];
+    for (const student of studentsWithHostels) {
+      if (student.studentType !== 'hosteller') {
+        continue;
+      }
+      const latest = latestLogBySapId.get(student.sapId);
+      if (latest?.status === 'entered') {
+        continue;
+      }
+      insideLogs.push({
+        sapId: student.sapId,
+        studentName: student.name,
+        category: student.category,
+        date: today,
+        entryTime: new Date(),
+        status: 'entered',
+      });
+    }
+    if (insideLogs.length) {
+      await EntryLog.insertMany(insideLogs);
     }
 
     console.log('Seed completed successfully!');
