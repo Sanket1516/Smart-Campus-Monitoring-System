@@ -10,7 +10,7 @@
 
 ## 🔑 Login Credentials
 
-### All User Accounts (After Running Seed)
+### Default User Accounts (Seed does not modify accounts)
 
 | Role | Username | Password | Access Level |
 |------|----------|----------|--------------|
@@ -20,27 +20,7 @@
 
 ### How to Create Accounts
 
-**Step 1: Run the seed script**
-```bash
-cd backend
-npm run seed
-```
-
-This will create all three accounts automatically!
-
-**Output:**
-```
-Seed completed successfully!
-  Students: 11
-  Admins: 3
-  Entry logs: ~60
-  Unauthorized logs: 2
-
-Default credentials:
-  Admin:    admin / admin123
-  Warden:   warden1 / warden123
-  Security: security1 / security123
-```
+Staff accounts are not created by the seed script. Create them in the admin panel (Settings → Staff Management) or keep existing accounts.
 
 ---
 
@@ -60,7 +40,7 @@ Default credentials:
 
 #### For Students:
 1. Visit `/student/exit-request`
-2. Enter SAP ID (e.g., `500091003`)
+2. Enter SAP ID (e.g., `70552000008`)
 3. System shows student profile if found
 4. Fill out the exit request form:
    - **Reason**: Medical, Family Visit, Personal Work, Emergency, Other
@@ -81,15 +61,15 @@ Default credentials:
 ### 🧪 Test Student SAP IDs
 
 **Hostellers (Can request exits):**
-- `500091003` - Rohan Gupta (Computer Engineering, Year 2)
-- `500091004` - Sneha Reddy (Pharmatech, Year 4)
-- `500091006` - Ananya Iyer (Pharmacy, Year 1)
-- `500091008` - Meera Joshi (Computer Science, Year 2)
+- `70552000008` - Rohan Gupta (Computer Engineering, Year 2)
+- `70552000011` - Sneha Reddy (Pharmatech, Year 4)
+- `70552000012` - Ananya Iyer (Pharmacy, Year 1)
+- `70552000013` - Meera Joshi (Computer Science, Year 2)
 
 **Day Scholars (Cannot request exits):**
-- `500091001` - Aarav Sharma
-- `500091002` - Priya Patel
-- `500091005` - Vikram Singh
+- `70552000002` - Aarav Sharma
+- `70552000003` - Priya Patel
+- `70552000004` - Vikram Singh
 
 ### 📸 Student Exit Request Workflow
 
@@ -243,7 +223,7 @@ Default credentials:
 ```bash
 # As Student (no login):
 1. Go to /student/exit-request
-2. Enter SAP ID: 500091003
+2. Enter SAP ID: 70552000008
 3. Fill form:
    - Reason: Medical
    - Details: "Doctor appointment"
@@ -262,7 +242,7 @@ Default credentials:
 
 # Verify:
 12. Go back to /student/exit-request
-13. Enter SAP ID: 500091003
+13. Enter SAP ID: 70552000008
 14. See: Request status = "Approved"
 ```
 
@@ -308,7 +288,7 @@ Dashboard, Scanner, Logs (3 items)
 - [ ] MongoDB running
 - [ ] Backend dependencies installed (`cd backend && npm install`)
 - [ ] Frontend dependencies installed (`cd frontend && npm install`)
-- [ ] Database seeded (`cd backend && npm run seed`)
+- [ ] Students seeded (`cd backend && npm run seed`)
 - [ ] Backend running (`cd backend && npm run dev`)
 - [ ] Frontend running (`cd frontend && npm run dev`)
 - [ ] Test admin login (admin/admin123)
@@ -321,7 +301,7 @@ Dashboard, Scanner, Logs (3 items)
 ## 📞 Common Issues
 
 ### "Invalid credentials"
-- **Solution:** Run `npm run seed` again to reset accounts
+- **Solution:** Run `npm run seed` to reset student data
 
 ### "Failed to load analytics"
 - **Solution:** Check backend is running and MongoDB is connected
@@ -335,7 +315,7 @@ Dashboard, Scanner, Logs (3 items)
 ### Student exit request "Student not found"
 - **Cause:** SAP ID not in database or student is day scholar
 - **Solution:** Use hosteller SAP IDs listed above
-- Run `npm run seed` to reset database
+- Run `npm run seed` to reset student data
 
 ---
 
@@ -352,8 +332,7 @@ Dashboard, Scanner, Logs (3 items)
 - Beautiful "Access Denied" pages
 - Frontend matches backend permissions
 
-✅ **Warden Account Added**
-- New default account in seed script
+✅ **Warden Account Supported**
 - Full warden portal functionality
 - Exit request approval workflow
 

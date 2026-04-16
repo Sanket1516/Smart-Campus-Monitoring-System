@@ -1,28 +1,23 @@
 /**
- * Seed script: Populates the database with sample data for development/testing.
+ * Seed script: Resets student data only.
  *
  * Usage:  npm run seed
  */
 require('dotenv').config();
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
 const connectDB = require('../config/db');
 const Student = require('../models/Student');
-const Admin = require('../models/Admin');
 const Hostel = require('../models/Hostel');
-const EntryLog = require('../models/EntryLog');
-const UnauthorizedLog = require('../models/UnauthorizedLog');
-const { isHosteller } = require('./studentMeta');
 
 const students = [
   // Day Scholars
   { 
     sapId: '70552300067', 
-    name: 'Sanket Kumar', 
-    email: 'sanket.kumar@college.edu', 
+    name: 'Sanket Mali', 
+    email: 'sanketmali1516@gmail.com', 
     phone: '9699980709',
-    parentEmail: 'parent.sanket@gmail.com', 
-    parentPhone: '9699980708', 
+    parentEmail: 'sanketmali0909@gmail.com', 
+    parentPhone: '9699980709', 
     category: 'dayscholars', 
     course: 'engineering', 
     department: 'computer science', 
@@ -32,7 +27,7 @@ const students = [
     isActive: true
   },
   { 
-    sapId: '500091001', 
+    sapId: '70552000002', 
     name: 'Aarav Sharma', 
     email: 'aarav.sharma@college.edu',
     phone: '9876543210', 
@@ -47,7 +42,7 @@ const students = [
     isActive: true
   },
   { 
-    sapId: '500091002', 
+    sapId: '70552000003', 
     name: 'Priya Patel', 
     email: 'priya.patel@college.edu',
     phone: '9876543211', 
@@ -62,7 +57,7 @@ const students = [
     isActive: true
   },
   { 
-    sapId: '500091005', 
+    sapId: '70552000004', 
     name: 'Vikram Singh', 
     email: 'vikram.singh@college.edu',
     phone: '9876543214', 
@@ -77,7 +72,7 @@ const students = [
     isActive: true
   },
   { 
-    sapId: '500091007', 
+    sapId: '70552000005', 
     name: 'Karthik Nair', 
     email: 'karthik.nair@college.edu',
     phone: '9876543216', 
@@ -92,7 +87,7 @@ const students = [
     isActive: true
   },
   { 
-    sapId: '500091009', 
+    sapId: '70552000006', 
     name: 'Arjun Desai', 
     email: 'arjun.desai@college.edu',
     phone: '9876543218', 
@@ -107,7 +102,7 @@ const students = [
     isActive: true
   },
   { 
-    sapId: '500091010', 
+    sapId: '70552000007', 
     name: 'Divya Kulkarni', 
     email: 'divya.kulkarni@college.edu',
     phone: '9876543219', 
@@ -124,7 +119,7 @@ const students = [
 
   // Boys Hostellers
   { 
-    sapId: '500091003', 
+    sapId: '70552000008', 
     name: 'Rohan Gupta', 
     email: 'rohan.gupta@college.edu',
     phone: '9876543212', 
@@ -139,7 +134,7 @@ const students = [
     isActive: true
   },
   { 
-    sapId: '500091011', 
+    sapId: '70552000009', 
     name: 'Aditya Verma', 
     email: 'aditya.verma@college.edu',
     phone: '9876543220', 
@@ -154,7 +149,7 @@ const students = [
     isActive: true
   },
   { 
-    sapId: '500091013', 
+    sapId: '70552000010', 
     name: 'Rahul Mehta', 
     email: 'rahul.mehta@college.edu',
     phone: '9876543222', 
@@ -171,7 +166,7 @@ const students = [
 
   // Girls Hostellers
   { 
-    sapId: '500091004', 
+    sapId: '70552000011', 
     name: 'Sneha Reddy', 
     email: 'sneha.reddy@college.edu',
     phone: '9876543213', 
@@ -186,7 +181,7 @@ const students = [
     isActive: true
   },
   { 
-    sapId: '500091006', 
+    sapId: '70552000012', 
     name: 'Ananya Iyer', 
     email: 'ananya.iyer@college.edu',
     phone: '9876543215', 
@@ -201,7 +196,7 @@ const students = [
     isActive: true
   },
   { 
-    sapId: '500091008', 
+    sapId: '70552000013', 
     name: 'Meera Joshi', 
     email: 'meera.joshi@college.edu',
     phone: '9876543217', 
@@ -216,7 +211,7 @@ const students = [
     isActive: true
   },
   { 
-    sapId: '500091012', 
+    sapId: '70552000014', 
     name: 'Ishita Shah', 
     email: 'ishita.shah@college.edu',
     phone: '9876543221', 
@@ -232,68 +227,25 @@ const students = [
   },
 ];
 
-const admins = [
-  { username: 'admin', password: 'admin123', name: 'System Administrator', email: 'admin@college.edu', phone: '9999999999', role: 'admin', isActive: true },
-  { username: 'warden1', password: 'warden123', name: 'Rajesh Kumar (Warden)', email: 'warden1@college.edu', phone: '9888888888', role: 'warden', isActive: true },
-  { username: 'security1', password: 'security123', name: 'Suresh Patil (Security)', email: 'security1@college.edu', phone: '9777777777', role: 'security', isActive: true },
-];
-
 const seed = async () => {
   try {
     await connectDB();
-    console.log('Clearing existing data...');
-    await Promise.all([
-      Student.deleteMany({}),
-      Admin.deleteMany({}),
-      Hostel.deleteMany({}),
-      EntryLog.deleteMany({}),
-      UnauthorizedLog.deleteMany({}),
-    ]);
+    console.log('Clearing students collection...');
+    const deleteResult = await Student.deleteMany({});
+    console.log(`Deleted ${deleteResult.deletedCount} students`);
 
-    console.log('Seeding admins...');
-    const createdAdmins = [];
-    for (const a of admins) {
-      const admin = await Admin.create(a); // uses pre-save hook for password hashing
-      createdAdmins.push(admin);
+    const boysHostel = await Hostel.findOne({ code: 'BHA' }).lean();
+    const girlsHostel = await Hostel.findOne({ code: 'GHB' }).lean();
+
+    if (!boysHostel || !girlsHostel) {
+      throw new Error(
+        'Required hostels not found (BHA/GHB). This seed only resets students and does not create hostels.'
+      );
     }
-    
-    // Find the warden admin for hostel assignment
-    const wardenAdmin = createdAdmins.find(a => a.role === 'warden');
-
-    console.log('Seeding hostels...');
-    const hostels = [
-      {
-        name: 'Boys Hostel A - North Wing',
-        code: 'BHA',
-        type: 'boys',
-        totalRooms: 50,
-        capacity: 100,
-        warden: wardenAdmin._id,
-        wardenPhone: '9888888888',
-        wardenEmail: 'warden1@college.edu',
-        location: 'North Campus, Block A',
-        isActive: true,
-      },
-      {
-        name: 'Girls Hostel B - South Wing',
-        code: 'GHB',
-        type: 'girls',
-        totalRooms: 40,
-        capacity: 80,
-        warden: wardenAdmin._id,
-        wardenPhone: '9888888888',
-        wardenEmail: 'warden1@college.edu',
-        location: 'South Campus, Block B',
-        isActive: true,
-      },
-    ];
-    const createdHostels = await Hostel.insertMany(hostels);
-    const boysHostel = createdHostels[0];
-    const girlsHostel = createdHostels[1];
     
     console.log('Seeding students...');
     // Assign hostellers to hostels based on gender/name
-    const studentsWithHostels = students.map((student, index) => {
+    const studentsWithHostels = students.map((student) => {
       if (student.category === 'hostellers') {
         // Assign to appropriate hostel
         const isBoy = ['Rohan', 'Aditya', 'Rahul'].some(name => student.name.includes(name));
@@ -330,91 +282,16 @@ const seed = async () => {
       throw studentError; // Re-throw to stop the seed
     }
 
-    // Generate sample entry logs for the past 7 days
-    console.log('Seeding entry logs...');
-    const logs = [];
-    for (let dayOffset = 6; dayOffset >= 0; dayOffset--) {
-      const d = new Date();
-      d.setDate(d.getDate() - dayOffset);
-      const dateStr = d.toISOString().split('T')[0];
-
-      for (const student of students) {
-        // ~80% chance of attendance each day
-        if (Math.random() > 0.2) {
-          const entryHour = 7 + Math.floor(Math.random() * 3); // 7-9 AM
-          const entryTime = new Date(d);
-          entryTime.setHours(entryHour, Math.floor(Math.random() * 60), 0, 0);
-
-          const exitHour = 15 + Math.floor(Math.random() * 4); // 3-6 PM
-          const exitTime = new Date(d);
-          exitTime.setHours(exitHour, Math.floor(Math.random() * 60), 0, 0);
-
-          // Only add exit if not today (today some students still inside)
-          const isToday = dayOffset === 0;
-          const hasExited = !isToday || Math.random() > 0.5;
-
-          logs.push({
-            sapId: student.sapId,
-            studentName: student.name,
-            category: student.category,
-            date: dateStr,
-            entryTime,
-            exitTime: hasExited ? exitTime : null,
-            status: hasExited ? 'exited' : 'entered',
-            lateReturn: isHosteller(student.category) && Math.random() > 0.9,
-            gateName: 'Main Gate',
-            gateNumber: 1,
-            terminalNumber: Math.floor(Math.random() * 2) + 1,
-            machineNumber: 100 + Math.floor(Math.random() * 2) + 1, // 101 or 102
-          });
-        }
-      }
-    }
-    await EntryLog.insertMany(logs);
-
-    // Add a few unauthorized attempts
-    console.log('Seeding unauthorized logs...');
-    const today = new Date().toISOString().split('T')[0];
-    await UnauthorizedLog.insertMany([
-      { 
-        scannedValue: 'UNKNOWN001', 
-        date: today,
-        gateName: 'Main Gate',
-        gateNumber: 1,
-        terminalNumber: 1,
-        machineNumber: 101
-      },
-      { 
-        scannedValue: 'INVALID999', 
-        date: today,
-        gateName: 'Main Gate',
-        gateNumber: 1,
-        terminalNumber: 2,
-        machineNumber: 102
-      },
-    ]);
-
     console.log('Seed completed successfully!');
     
     // Verify what was actually inserted
     const finalCount = await Student.countDocuments();
     console.log(`\n📊 Final Database Counts:`);
     console.log(`  Students in DB: ${finalCount}`);
-    console.log(`  Admins: ${admins.length}`);
-    console.log(`  Hostels: ${createdHostels.length}`);
-    console.log(`  Entry logs: ${logs.length}`);
-    console.log(`  Unauthorized logs: 2`);
-    console.log('\n✅ Default Admin Credentials:');
-    console.log('  Admin:    admin / admin123');
-    console.log('  Warden:   warden1 / warden123');
-    console.log('  Security: security1 / security123');
-    console.log('\n✅ Hostels created and assigned to warden1');
-    console.log('  - Boys Hostel A - North Wing (BHA)');
-    console.log('  - Girls Hostel B - South Wing (GHB)');
     console.log('\n✅ Test Student SAP IDs:');
-    console.log('  Day Scholar: 70552300067 (Sanket Kumar)');
-    console.log('  Hosteller (Boy): 500091003 (Rohan Gupta)');
-    console.log('  Hosteller (Girl): 500091004 (Sneha Reddy)');
+    console.log('  Day Scholar: 70552300067 (Sanket Mali)');
+    console.log('  Hosteller (Boy): 70552000008 (Rohan Gupta)');
+    console.log('  Hosteller (Girl): 70552000011 (Sneha Reddy)');
     console.log('\n📧 All emails and phone numbers can be edited in the admin panel');
 
     process.exit(0);

@@ -15,7 +15,7 @@ A full-stack web application for real-time monitoring of student entry and exit 
 cd backend && npm install
 cd ../frontend && npm install
 
-# 3. Seed the database (from backend/)
+# 3. Reset student data (from backend/)
 cd ../backend
 npm run seed
 
@@ -624,7 +624,7 @@ mongod
 
 Or update `MONGO_URI` in `.env` with your MongoDB Atlas connection string.
 
-### Step 5 -- Seed the Database
+### Step 5 -- Seed Students
 
 From the `backend/` directory:
 
@@ -633,11 +633,10 @@ npm run seed
 ```
 
 This will:
-- Clear all existing data in the database
-- Insert 10 sample students (SAP IDs 500091001 -- 500091010)
-- Create 2 admin/security users
-- Generate ~7 days of sample entry/exit logs
-- Insert 2 unauthorized SAP ID attempt log entries
+- Clear the students collection only
+- Insert 14 sample students (SAP IDs 70552000002--70552000014 and 70552300067)
+- Keep existing admins, hostels, logs, and settings unchanged
+- Require hostels with codes `BHA` and `GHB` to already exist
 
 ### Step 6 -- Start the Backend Server
 
@@ -724,7 +723,7 @@ CLIENT_URL=http://localhost:5173       # Allowed origin for CORS (frontend URL)
 
 ---
 
-## Seed Data
+## Seed Data (Students Only)
 
 Run the seed script from the `backend/` directory:
 
@@ -732,33 +731,26 @@ Run the seed script from the `backend/` directory:
 npm run seed
 ```
 
-### Seeded Students (11 records)
+### Seeded Students (14 records)
 
-| SAP ID      | Name               | Category    | Department       | Year |
-| ----------- | ------------------ | ----------- | ---------------- | ---- |
-| 70552300067 | Sanket (Test Card) | Day Scholar | Computer Science | 3    |
-| 500091001   | Aarav Sharma       | Day Scholar | Computer Science | 3    |
-| 500091002   | Priya Patel     | Day Scholar | Computer Science | 3    |
-| 500091003   | Rohan Gupta     | Hosteller   | Electronics      | 2    |
-| 500091004   | Sneha Reddy     | Hosteller   | Mechanical       | 4    |
-| 500091005   | Vikram Singh    | Day Scholar | Computer Science | 2    |
-| 500091006   | Ananya Iyer     | Hosteller   | Civil            | 1    |
-| 500091007   | Karthik Nair    | Day Scholar | IT               | 3    |
-| 500091008   | Meera Joshi     | Hosteller   | Computer Science | 2    |
-| 500091009   | Arjun Desai     | Day Scholar | Electronics      | 4    |
-| 500091010   | Divya Kulkarni  | Day Scholar | Computer Science | 3    |
+| SAP ID      | Name            | Category    | Course        | Department          | Year |
+| ----------- | --------------- | ----------- | ------------- | ------------------- | ---- |
+| 70552300067 | Sanket Mali     | Day Scholar | Engineering   | Computer Science    | 3    |
+| 70552000002 | Aarav Sharma    | Day Scholar | Engineering   | Computer Science    | 3    |
+| 70552000003 | Priya Patel     | Day Scholar | Pharmacy      | BPharm              | 2    |
+| 70552000004 | Vikram Singh    | Day Scholar | Engineering   | Computer Engineering | 2    |
+| 70552000005 | Karthik Nair    | Day Scholar | MBATech       | MBATech             | 1    |
+| 70552000006 | Arjun Desai     | Day Scholar | Pharmacy      | BPharm              | 4    |
+| 70552000007 | Divya Kulkarni  | Day Scholar | Engineering   | Computer Science    | 3    |
+| 70552000008 | Rohan Gupta     | Hosteller   | Engineering   | Computer Engineering | 2    |
+| 70552000009 | Aditya Verma    | Hosteller   | Engineering   | Computer Engineering | 1    |
+| 70552000010 | Rahul Mehta     | Hosteller   | Engineering   | Computer Engineering | 3    |
+| 70552000011 | Sneha Reddy     | Hosteller   | Pharmatech    | Pharmatech          | 4    |
+| 70552000012 | Ananya Iyer     | Hosteller   | Pharmacy      | BPharm              | 1    |
+| 70552000013 | Meera Joshi     | Hosteller   | Engineering   | Computer Science    | 2    |
+| 70552000014 | Ishita Shah     | Hosteller   | Engineering   | Computer Science    | 2    |
 
-### Seeded Admin Users
-
-| Username    | Password      | Role     | Display Name   |
-| ----------- | ------------- | -------- | -------------- |
-| `admin`     | `admin123`    | admin    | System Admin   |
-| `security1` | `security123` | security | Gate Security  |
-
-### Generated Data
-
-- **Entry Logs:** ~7 days of randomized entry/exit records. Each student has an ~80% chance of attendance per day. Entry times range from 07:00--09:59 and exit times from 15:00--18:59. On the current day, approximately half the students remain inside (status `entered`).
-- **Unauthorized Logs:** 2 sample unauthorized scan attempts (`UNKNOWN001`, `INVALID999`) dated today.
+**Note:** The seed script does not create or modify admin/staff accounts, hostels, or logs.
 
 ---
 
