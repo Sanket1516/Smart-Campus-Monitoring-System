@@ -1,10 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   HiOutlineChartBar,
   HiOutlineClock,
-  HiOutlineExclamationCircle,
-  HiOutlineLogin,
-  HiOutlineLogout,
   HiOutlineOfficeBuilding,
   HiOutlineServer,
   HiOutlineShieldExclamation,
@@ -55,49 +52,6 @@ const formatDateTime = (value) =>
     ? new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
     : 'Never';
 
-const formatFeedItem = (event) => {
-  const time = new Date(event.time).toLocaleTimeString('en-IN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-
-  if (event.eventType === 'unauthorized' || event.type === 'unauthorized') {
-    return `Unknown — Unauthorized — ${event.gateName || 'Gate'} — ${time}`;
-  }
-
-  return `${event.studentName || 'Student'} — ${(event.type || 'scan').toUpperCase()} — ${
-    event.gateName || 'Gate'
-  } Terminal ${event.terminalNumber ?? '-'} — ${time}`;
-};
-
-const buildLiveEvent = (payload) => ({
-  id: `live-${Date.now()}-${Math.random()}`,
-  type: payload.type,
-  eventType: 'authorized',
-  studentName: payload.studentName,
-  sapId: payload.sapId,
-  hostelName: payload.hostelName,
-  gateName: payload.gateName,
-  gateNumber: payload.gateNumber,
-  terminalNumber: payload.terminalNumber,
-  terminalLabel: payload.terminalLabel,
-  machineNumber: payload.machineNumber,
-  time: payload.time || new Date().toISOString(),
-});
-
-const buildUnauthorizedEvent = (payload) => ({
-  id: `unauthorized-${Date.now()}-${Math.random()}`,
-  type: 'unauthorized',
-  eventType: 'unauthorized',
-  gateName: payload.gateName,
-  gateNumber: payload.gateNumber,
-  terminalNumber: payload.terminalNumber,
-  terminalLabel: payload.terminalLabel,
-  machineNumber: payload.machineNumber,
-  time: payload.time || new Date().toISOString(),
-});
-
 const groupTerminalStatuses = (terminals) => {
   return terminals.reduce((acc, terminal) => {
     const key = terminal.isEnrollmentStation
@@ -113,34 +67,28 @@ const STUDENT_GROUP_META = {
   currentlyInside: {
     key: 'currentlyInside',
     title: 'Inside Campus Students',
-    empty: 'No students are currently inside.',
+    empty: 'No students are currently inside campus.',
   },
-  enteredToday: {
-    key: 'enteredToday',
-    title: 'Entries Today',
-    empty: 'No students have entered today.',
+  currentlyOutside: {
+    key: 'currentlyOutside',
+    title: 'Outside Campus Students',
+    empty: 'No students are currently outside campus.',
   },
-  exitedToday: {
-    key: 'exitedToday',
-    title: 'Exits Today',
-    empty: 'No students have exited today.',
+  totalStudents: {
+    key: 'totalStudents',
+    title: 'All Students',
+    empty: 'No students found for this view.',
   },
   hostellersOutside: {
     key: 'hostellersOutside',
     title: 'Hostellers Outside',
     empty: 'No hostellers are currently outside.',
   },
-  lateReturns: {
-    key: 'lateReturns',
-    title: 'Late Returns Today',
-    empty: 'No late return records today.',
-  },
 };
 
 export default function Dashboard() {
   const { admin } = useAuth();
   const { socket } = useSocket();
-  const feedContainerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hostels, setHostels] = useState([]);
@@ -149,6 +97,7 @@ export default function Dashboard() {
   const [hourly, setHourly] = useState(null);
   const [terminals, setTerminals] = useState([]);
   const [activeStudentGroup, setActiveStudentGroup] = useState('currentlyInside');
+  const [showStudentList, setShowStudentList] = useState(true);
 
   const selectedHostel = useMemo(
     () => hostels.find((hostel) => hostel._id === selectedHostelId) || null,
@@ -187,12 +136,6 @@ export default function Dashboard() {
     const interval = setInterval(() => loadDashboard({ silent: true }), 30000);
     return () => clearInterval(interval);
   }, [selectedHostelId]);
-
-  useEffect(() => {
-    if (feedContainerRef.current) {
-      feedContainerRef.current.scrollTop = 0;
-    }
-  }, [dashboard?.liveActivity]);
 
   useEffect(() => {
     if (!socket) return undefined;
@@ -266,20 +209,9 @@ export default function Dashboard() {
       });
     };
 
-    const updateFeed = (event) => {
-      setDashboard((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          liveActivity: [event, ...(current.liveActivity || [])].slice(0, 50),
-        };
-      });
-    };
-
     const handleScanLive = (payload) => {
       if (!matchesSelectedHostel(payload.hostelName)) return;
 
-      updateFeed(buildLiveEvent(payload));
       updateHourly(payload.type, payload.time);
       updateGateActivity(payload, false);
       updateHostelMovement(payload);
@@ -287,21 +219,64 @@ export default function Dashboard() {
       setDashboard((current) => {
         if (!current) return current;
         const todayStats = { ...(current.todayStats || {}) };
+        const groups = { ...(current.studentGroups || {}) };
+        const currentInside = [...(groups.currentlyInside || [])];
+        const currentOutside = [...(groups.currentlyOutside || [])];
+        const currentHostellersOutside = [...(groups.hostellersOutside || [])];
+
+        const scanTime = payload.time || new Date().toISOString();
+        const studentRow = {
+          sapId: payload.sapId,
+          name: payload.studentName || 'Student',
+          category: payload.studentType || '-',
+          department: payload.department || '-',
+          year: '-',
+          course: '-',
+          latestStatus: payload.type === 'entry' ? 'entered' : 'exited',
+          lastScan: scanTime,
+          lateReturn: false,
+        };
+
+        const upsertBySapId = (list, row) => {
+          const idx = list.findIndex((item) => item.sapId === row.sapId);
+          if (idx === -1) return [row, ...list];
+          const next = [...list];
+          next[idx] = { ...next[idx], ...row };
+          return next;
+        };
+
+        const removeBySapId = (list, sapId) => list.filter((item) => item.sapId !== sapId);
+
         if (payload.type === 'entry') {
-          todayStats.enteredToday = (todayStats.enteredToday || 0) + 1;
           todayStats.currentlyInside = (todayStats.currentlyInside || 0) + 1;
+          todayStats.currentlyOutside = Math.max(0, (todayStats.currentlyOutside || 0) - 1);
+
+          groups.currentlyInside = upsertBySapId(currentInside, studentRow);
+          groups.currentlyOutside = removeBySapId(currentOutside, payload.sapId);
+          if (payload.studentType === 'hosteller') {
+            groups.hostellersOutside = removeBySapId(currentHostellersOutside, payload.sapId);
+          }
         } else if (payload.type === 'exit') {
-          todayStats.exitedToday = (todayStats.exitedToday || 0) + 1;
           todayStats.currentlyInside = Math.max(0, (todayStats.currentlyInside || 0) - 1);
+          todayStats.currentlyOutside = (todayStats.currentlyOutside || 0) + 1;
+
+          groups.currentlyInside = removeBySapId(currentInside, payload.sapId);
+          groups.currentlyOutside = upsertBySapId(currentOutside, studentRow);
+          if (payload.studentType === 'hosteller') {
+            groups.hostellersOutside = upsertBySapId(currentHostellersOutside, studentRow);
+          }
         }
-        todayStats.totalScans = (todayStats.totalScans || 0) + 1;
-        return { ...current, todayStats };
+
+        return {
+          ...current,
+          todayStats,
+          studentGroups: groups,
+        };
       });
     };
 
     const handleUnauthorized = (payload) => {
       if (selectedHostelId !== 'all') return;
-      updateFeed(buildUnauthorizedEvent(payload));
       updateGateActivity(payload, true);
       setDashboard((current) => {
         if (!current) return current;
@@ -492,26 +467,28 @@ export default function Dashboard() {
           active={activeStudentGroup === 'currentlyInside'}
         />
         <StatCard
-          title="Entries Today"
-          value={today.enteredToday || 0}
-          icon={HiOutlineLogin}
+          title="Outside Campus"
+          value={today.currentlyOutside || 0}
+          icon={HiOutlineUsers}
           color="blue"
-          onClick={() => setActiveStudentGroup('enteredToday')}
-          active={activeStudentGroup === 'enteredToday'}
+          onClick={() => setActiveStudentGroup('currentlyOutside')}
+          active={activeStudentGroup === 'currentlyOutside'}
         />
         <StatCard
-          title="Exits Today"
-          value={today.exitedToday || 0}
-          icon={HiOutlineLogout}
+          title="Total Students"
+          value={dashboard.totalStudents || 0}
+          icon={HiOutlineUserGroup}
           color="indigo"
-          onClick={() => setActiveStudentGroup('exitedToday')}
-          active={activeStudentGroup === 'exitedToday'}
+          onClick={() => setActiveStudentGroup('totalStudents')}
+          active={activeStudentGroup === 'totalStudents'}
         />
         <StatCard
-          title="Unauthorized"
-          value={today.unauthorizedAttempts || 0}
-          icon={HiOutlineExclamationCircle}
-          color="yellow"
+          title="Hostellers Outside"
+          value={today.hostellersOutside || 0}
+          icon={HiOutlineServer}
+          color="orange"
+          onClick={() => setActiveStudentGroup('hostellersOutside')}
+          active={activeStudentGroup === 'hostellersOutside'}
         />
         <StatCard
           title="Blocked Attempts"
@@ -528,71 +505,28 @@ export default function Dashboard() {
       </div>
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-gray-800">{selectedGroupMeta.title}</h2>
             <p className="text-sm text-gray-500">Count: {selectedStudents.length}</p>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs">
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-gray-500">Click cards above to switch the student list.</p>
             <button
               type="button"
-              onClick={() => setActiveStudentGroup('currentlyInside')}
-              className={`rounded-full px-3 py-1.5 ${
-                activeStudentGroup === 'currentlyInside'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+              onClick={() => setShowStudentList((current) => !current)}
+              className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
             >
-              Inside
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveStudentGroup('enteredToday')}
-              className={`rounded-full px-3 py-1.5 ${
-                activeStudentGroup === 'enteredToday'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Entered
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveStudentGroup('exitedToday')}
-              className={`rounded-full px-3 py-1.5 ${
-                activeStudentGroup === 'exitedToday'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Exited
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveStudentGroup('hostellersOutside')}
-              className={`rounded-full px-3 py-1.5 ${
-                activeStudentGroup === 'hostellersOutside'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Hostellers Outside
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveStudentGroup('lateReturns')}
-              className={`rounded-full px-3 py-1.5 ${
-                activeStudentGroup === 'lateReturns'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Late Returns
+              {showStudentList ? 'Hide Students' : 'Show Students'}
             </button>
           </div>
         </div>
 
-        {selectedStudents.length === 0 ? (
+        {!showStudentList ? (
+          <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500">
+            Student list is hidden. Use the button above to show it again.
+          </div>
+        ) : selectedStudents.length === 0 ? (
           <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500">
             {selectedGroupMeta.empty}
           </div>
@@ -612,7 +546,10 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {selectedStudents.map((student) => (
-                  <tr key={`${activeStudentGroup}-${student.sapId}`} className="border-b border-gray-100">
+                  <tr
+                    key={`${activeStudentGroup}-${student.sapId}`}
+                    className="border-b border-gray-100"
+                  >
                     <td className="px-3 py-2 font-medium text-gray-800">{student.name || '-'}</td>
                     <td className="px-3 py-2 text-gray-700">{student.sapId || '-'}</td>
                     <td className="px-3 py-2 text-gray-700">{student.department || '-'}</td>
@@ -714,43 +651,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr,0.9fr]">
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-800">Live Activity Feed</h2>
-              <p className="text-sm text-gray-500">Last 50 scan events, updated in real time.</p>
-            </div>
-            <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
-              Auto-updating
-            </span>
-          </div>
-          <div ref={feedContainerRef} className="max-h-[520px] space-y-3 overflow-y-auto pr-1">
-            {(dashboard.liveActivity || []).length === 0 ? (
-              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500">
-                No recent activity for the selected view.
-              </div>
-            ) : (
-              dashboard.liveActivity.map((event) => (
-                <div
-                  key={event.id}
-                  className={`rounded-xl border px-4 py-3 ${
-                    event.eventType === 'unauthorized'
-                      ? 'border-orange-200 bg-orange-50'
-                      : 'border-gray-200 bg-gray-50'
-                  }`}
-                >
-                  <p className="font-medium text-gray-800">{formatFeedItem(event)}</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {event.hostelName ? `${event.hostelName} • ` : ''}
-                    {event.terminalLabel || `Machine #${event.machineNumber ?? '-'}`}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
+      <div className="grid grid-cols-1 gap-6">
         <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="mb-4">
             <h2 className="text-lg font-semibold text-gray-800">Gate Status</h2>

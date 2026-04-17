@@ -20,6 +20,115 @@ const shiftDateStr = (dateStr, offsetDays) => {
   return formatDateLocal(date);
 };
 
+// GET /api/dashboard/attendance
+exports.getAttendanceStatus = async (req, res) => {
+  try {
+    const selectedDate = req.query.date || todayStr();
+    let hostelId = req.query.hostelId || '';
+
+    if (req.admin.role === 'warden') {
+      const assignedHostel = await resolveAssignedHostel(req.admin);
+
+      if (!assignedHostel?._id) {
+        return res.json({
+          overallStatus: [],
+          todayStatus: [],
+          selectedDate,
+          selectedHostelId: null,
+        });
+      }
+
+      hostelId = String(assignedHostel._id);
+    }
+
+    const studentFilter = { isActive: true };
+    if (hostelId) {
+      studentFilter.hostel = hostelId;
+    }
+
+    const students = await Student.find(studentFilter).select('sapId name').lean();
+    const sapIds = students.map((student) => student.sapId);
+    const studentNameBySapId = new Map(students.map((student) => [student.sapId, student.name]));
+
+    if (!sapIds.length) {
+      return res.json({
+        overallStatus: [],
+        todayStatus: [],
+        selectedDate,
+        selectedHostelId: hostelId || null,
+      });
+    }
+
+    const [latestLogsByStudent, todayLogs] = await Promise.all([
+      EntryLog.aggregate([
+        { $match: { sapId: { $in: sapIds } } },
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: '$sapId',
+            latest: { $first: '$$ROOT' },
+          },
+        },
+      ]),
+      EntryLog.find({ date: selectedDate, sapId: { $in: sapIds } }).sort({ createdAt: -1 }).lean(),
+    ]);
+
+    const overallStatus = latestLogsByStudent
+      .map((row) => row.latest)
+      .filter((log) => log.status === 'entered')
+      .map((log) => ({
+        studentName: studentNameBySapId.get(log.sapId) || log.studentName,
+        studentId: log.sapId,
+        lastEntryTime: log.entryTime || log.createdAt,
+        currentStatus: 'IN',
+        student_id: log.sapId,
+        timestamp: log.entryTime || log.createdAt,
+        status: 'IN',
+      }))
+      .sort((a, b) => new Date(b.lastEntryTime) - new Date(a.lastEntryTime));
+
+    const todayStatus = todayLogs
+      .flatMap((log) => {
+        const studentName = studentNameBySapId.get(log.sapId) || log.studentName;
+        const rows = [];
+
+        if (log.entryTime) {
+          rows.push({
+            studentName,
+            studentId: log.sapId,
+            time: log.entryTime,
+            status: 'IN',
+            student_id: log.sapId,
+            timestamp: log.entryTime,
+          });
+        }
+
+        if (log.exitTime) {
+          rows.push({
+            studentName,
+            studentId: log.sapId,
+            time: log.exitTime,
+            status: 'OUT',
+            student_id: log.sapId,
+            timestamp: log.exitTime,
+          });
+        }
+
+        return rows;
+      })
+      .sort((a, b) => new Date(b.time) - new Date(a.time));
+
+    return res.json({
+      overallStatus,
+      todayStatus,
+      selectedDate,
+      selectedHostelId: hostelId || null,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+
 // GET /api/dashboard
 exports.getDashboardStats = async (req, res) => {
   try {
@@ -37,6 +146,7 @@ exports.getDashboardStats = async (req, res) => {
             totalScans: 0,
             uniqueEntries: 0,
             currentlyInside: 0,
+            currentlyOutside: 0,
             enteredToday: 0,
             exitedToday: 0,
             unauthorizedAttempts: 0,
@@ -144,31 +254,45 @@ exports.getDashboardStats = async (req, res) => {
     const enteredToday = filteredTodayLogs.filter((l) => l.entryTime).length;
     const exitedToday = filteredTodayLogs.filter((l) => l.exitTime).length;
     const currentlyInside = new Set();
-
-    // Build currently-inside set from today's logs
-    const studentLogsMap = {};
-    for (const log of filteredTodayLogs) {
-      if (!studentLogsMap[log.sapId]) studentLogsMap[log.sapId] = [];
-      studentLogsMap[log.sapId].push(log);
-    }
+    const currentlyOutside = new Set();
     const latestLogBySapId = {};
-    for (const [sapId, logs] of Object.entries(studentLogsMap)) {
-      const latest = logs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-      latestLogBySapId[sapId] = latest;
-      if (latest.status === 'entered') currentlyInside.add(sapId);
+
+    // Build live occupancy from latest log per student, regardless of date.
+    const filteredSapIdList = Array.from(filteredSapIds);
+    const latestLogsByStudent = filteredSapIdList.length
+      ? await EntryLog.aggregate([
+          { $match: { sapId: { $in: filteredSapIdList } } },
+          { $sort: { createdAt: -1 } },
+          {
+            $group: {
+              _id: '$sapId',
+              latest: { $first: '$$ROOT' },
+            },
+          },
+        ])
+      : [];
+
+    for (const row of latestLogsByStudent) {
+      const latest = row.latest;
+      latestLogBySapId[row._id] = latest;
+      if (latest?.status === 'entered') {
+        currentlyInside.add(row._id);
+      }
     }
 
-    // Hostellers currently outside
-    const hostellerLogs = filteredTodayLogs.filter((l) => isHosteller(l.category));
-    const hostellersOutside = new Set();
-    const hostellerMap = {};
-    for (const log of hostellerLogs) {
-      if (!hostellerMap[log.sapId]) hostellerMap[log.sapId] = [];
-      hostellerMap[log.sapId].push(log);
+    for (const student of filteredStudents) {
+      if (!currentlyInside.has(student.sapId)) {
+        currentlyOutside.add(student.sapId);
+      }
     }
-    for (const [sapId, logs] of Object.entries(hostellerMap)) {
-      const latest = logs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-      if (latest.status === 'exited') hostellersOutside.add(sapId);
+
+    // Hostellers currently outside (live occupancy, non-resetting)
+    const hostellersOutside = new Set();
+    for (const student of filteredStudents) {
+      if (!isHosteller(student.category)) continue;
+      if (!currentlyInside.has(student.sapId)) {
+        hostellersOutside.add(student.sapId);
+      }
     }
 
     // Late returns for selected date
@@ -234,6 +358,9 @@ exports.getDashboardStats = async (req, res) => {
     );
     const currentlyInsideStudents = mapStudents(
       Array.from(currentlyInside).map((sapId) => studentsBySapId.get(sapId))
+    );
+    const currentlyOutsideStudents = mapStudents(
+      Array.from(currentlyOutside).map((sapId) => studentsBySapId.get(sapId))
     );
     const hostellersOutsideStudents = mapStudents(
       Array.from(hostellersOutside).map((sapId) => studentsBySapId.get(sapId))
@@ -311,7 +438,7 @@ exports.getDashboardStats = async (req, res) => {
       if (hostelMovementMap[key]) hostelMovementMap[key].inside += 1;
     }
 
-    for (const sapId of hostellersOutside) {
+    for (const sapId of currentlyOutside) {
       const student = studentsBySapId.get(sapId);
       const key = student?.hostel?._id ? String(student.hostel._id) : 'unassigned';
       if (hostelMovementMap[key]) hostelMovementMap[key].outside += 1;
@@ -392,6 +519,7 @@ exports.getDashboardStats = async (req, res) => {
         totalScans: enteredToday + exitedToday,
         uniqueEntries: uniqueSapIds.size,
         currentlyInside: currentlyInside.size,
+        currentlyOutside: currentlyOutside.size,
         enteredToday,
         exitedToday,
         unauthorizedAttempts: req.admin.role === 'warden' ? 0 : unauthorizedToday,
@@ -406,6 +534,7 @@ exports.getDashboardStats = async (req, res) => {
         enteredToday: enteredTodayStudents,
         exitedToday: exitedTodayStudents,
         currentlyInside: currentlyInsideStudents,
+        currentlyOutside: currentlyOutsideStudents,
         hostellersOutside: hostellersOutsideStudents,
         lateReturns: lateReturnStudents,
       },
