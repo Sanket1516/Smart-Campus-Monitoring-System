@@ -162,48 +162,34 @@ exports.processScan = async (req, res) => {
       }
     }
 
-    // Use the latest log for today so repeated entry/exit cycles toggle correctly.
-    let log = await EntryLog.findOne({ sapId, date: today }).sort({ createdAt: -1 });
+    // IMPORTANT: Toggle must be based on the student's latest log overall, not only today's log.
+    const lastLog = await EntryLog.findOne({ sapId }).sort({ createdAt: -1, _id: -1 });
+    const normalizedLastStatus = String(lastLog?.status || '').trim().toLowerCase();
+    const nextIsExit = normalizedLastStatus === 'entered' || normalizedLastStatus === 'in';
+    const action = nextIsExit ? 'exit' : 'entry';
+    const newStatus = nextIsExit ? 'exited' : 'entered';
 
-    let action;
+    console.info(
+      `[SCAN TOGGLE] sapId=${sapId} lastStatus=${normalizedLastStatus || 'none'} ` +
+        `lastLogAt=${lastLog?.createdAt ? new Date(lastLog.createdAt).toISOString() : 'none'} ` +
+        `nextStatus=${newStatus}`
+    );
 
-    if (!log) {
-      // No entry for today → mark ENTRY
-      log = await EntryLog.create({
-        sapId,
-        studentName: student.name,
-        category: student.category,
-        date: today,
-        entryTime: now,
-        status: 'entered',
-      });
-      action = 'entry';
-    } else if (log.status === 'entered') {
-      // Already entered → mark EXIT
-      log.exitTime = now;
-      log.status = 'exited';
-
-      // Check late return for hostellers
-      if (isHosteller(student.category)) {
-        if (await isPastCurfew(now, student.hostel?._id || student.hostel)) {
-          log.lateReturn = true;
-        }
-      }
-
-      await log.save();
-      action = 'exit';
-    } else {
-      // Already exited → new entry (re-entry)
-      log = await EntryLog.create({
-        sapId,
-        studentName: student.name,
-        category: student.category,
-        date: today,
-        entryTime: now,
-        status: 'entered',
-      });
-      action = 'entry';
+    let lateReturn = false;
+    if (nextIsExit && isHosteller(student.category)) {
+      lateReturn = await isPastCurfew(now, student.hostel?._id || student.hostel);
     }
+
+    const log = await EntryLog.create({
+      sapId,
+      studentName: student.name,
+      category: student.category,
+      date: today,
+      entryTime: nextIsExit ? null : now,
+      exitTime: nextIsExit ? now : null,
+      status: newStatus,
+      lateReturn,
+    });
 
     emitScanLive({
       studentName: student.name,
