@@ -956,48 +956,6 @@ Biometric Terminal Flow (Primary Automated Path):
 
 ---
 
-## Screenshots
-
-> Replace the placeholder paths below with actual screenshot images.
-
-### Login Page
-```
-[ Screenshot: Login page with username/password fields ]
-```
-`screenshots/login.png`
-
-### Dashboard
-```
-[ Screenshot: Dashboard with stat cards, hourly bar chart, weekly trend line chart ]
-```
-`screenshots/dashboard.png`
-
-### Gate Scanner
-```
-[ Screenshot: SAP ID manual entry dashboard with result card ]
-```
-`screenshots/scanner.png`
-
-### Entry Logs
-```
-[ Screenshot: Paginated entry/exit log table with filters ]
-```
-`screenshots/logs.png`
-
-### Analytics
-```
-[ Screenshot: Analytics page with doughnut chart, trend lines, and population curve ]
-```
-`screenshots/analytics.png`
-
-### Hosteller Monitoring
-```
-[ Screenshot: Hosteller status table with filter tabs and alert badges ]
-```
-`screenshots/hostellers.png`
-
----
-
 ## Future Scope
 
 1. **Face Recognition** -- Integrate a face detection model (e.g., face-api.js or a Python microservice with OpenCV/dlib) as an additional identity-verification factor.
@@ -1016,19 +974,10 @@ Biometric Terminal Flow (Primary Automated Path):
 
 ---
 
-## Authors
-
-| Name | Role | Department |
-| ---- | ---- | ---------- |
-|      |      | Computer Science Engineering |
-|      |      | Computer Science Engineering |
-|      |      | Computer Science Engineering |
-|      |      | Computer Science Engineering |
-
 > Fill in the author names and roles as applicable.
 
 **Guide / Mentor:**
-Prof. _______________
+Prof. Dr. Nitin Choubey
 Department of Computer Science and Engineering
 
 ---
