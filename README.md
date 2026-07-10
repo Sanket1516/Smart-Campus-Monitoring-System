@@ -2,7 +2,7 @@
 
 A full-stack web application for real-time monitoring of student entry and exit at a college campus gate. Built with the MERN stack, the system supports biometric terminal-based access events as a primary automated channel and SAP ID based manual entry as an operational fallback, automatically toggles between entry and exit states, tracks day scholars and hostellers separately, detects curfew violations, supports hosteller exit-request approvals, enables student enrollment via Excel upload, sends parent notifications via email and SMS, and provides role-aware dashboards with rich analytics.
 
-> **Academic Project** -- 3rd Year, B.E. Computer Science Engineering
+> **Academic Project** -- 3rd Year, BTech Computer Science
 
 ---
 
@@ -720,7 +720,6 @@ CLIENT_URL=http://localhost:5173       # Allowed origin for CORS (frontend URL)
 | `CURFEW_HOUR`    | No       | Defaults to `22` (10:00 PM); exits after this hour flag `lateReturn: true`  |
 | `CLIENT_URL`     | No       | Defaults to `http://localhost:5173`; update for production deployments      |
 
-> *These variables are optional for basic operation but are required if you want email/SMS notifications to function.
 
 ---
 
@@ -973,8 +972,6 @@ Biometric Terminal Flow (Primary Automated Path):
 13. **CI/CD Pipeline** -- Set up GitHub Actions for automated testing, linting, and deployment.
 
 ---
-
-> Fill in the author names and roles as applicable.
 
 **Guide / Mentor:**
 Prof. Dr. Nitin Choubey
