@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
+const { register, metricsMiddleware } = require('./utils/metrics');
 
 // Route imports
 const authRoutes = require('./routes/auth');
@@ -45,6 +46,9 @@ app.use(
     credentials: true,
   })
 );
+
+// Prometheus Metrics Middleware
+app.use(metricsMiddleware);
 
 // Rate limiting
 const limiter = rateLimit({
@@ -85,6 +89,16 @@ app.use('/api/ai-query', aiQueryRoutes);
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Prometheus Metrics Endpoint
+app.get('/metrics', async (_req, res) => {
+  try {
+    res.set('Content-Type', register.contentType);
+    res.end(await register.metrics());
+  } catch (err) {
+    res.status(500).end(err);
+  }
 });
 
 // Error handler

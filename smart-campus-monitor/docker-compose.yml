@@ -74,6 +74,31 @@ services:
     networks:
       - campus-network
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: smart-campus-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - campus-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: smart-campus-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - campus-network
+    depends_on:
+      - prometheus
+
 networks:
   campus-network:
     driver: bridge
@@ -82,4 +107,8 @@ volumes:
   mongo-data:
     driver: local
   ollama-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
     driver: local
