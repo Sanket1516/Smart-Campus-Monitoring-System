@@ -162,13 +162,35 @@ exports.processScan = async (req, res) => {
       }
     }
 
-    // Use the latest log for today so repeated entry/exit cycles toggle correctly.
-    let log = await EntryLog.findOne({ sapId, date: today }).sort({ createdAt: -1 });
+    // Fetch the LATEST log for today (by createdAt DESC) to toggle status correctly
+    let log = await EntryLog.findOne({ sapId, date: today })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    
+    // Debug log: check what we fetched
+    if (log) {
+      console.log(`[SCAN DEBUG] Found latest log for ${sapId}:`, {
+        logId: log._id,
+        status: log.status,
+        createdAt: log.createdAt,
+        entryTime: log.entryTime,
+        exitTime: log.exitTime,
+      });
+    } else {
+      console.log(`[SCAN DEBUG] No existing log found for ${sapId} on ${today}`);
+    }
+    
+    // If lean() returns a plain object, we need to fetch the actual doc for modification
+    if (log) {
+      log = await EntryLog.findById(log._id);
+    }
 
     let action;
 
     if (!log) {
       // No entry for today → mark ENTRY
+      console.log(`[SCAN ACTION] New student entry for ${sapId}`);
       log = await EntryLog.create({
         sapId,
         studentName: student.name,
@@ -180,6 +202,7 @@ exports.processScan = async (req, res) => {
       action = 'entry';
     } else if (log.status === 'entered') {
       // Already entered → mark EXIT
+      console.log(`[SCAN ACTION] Student ${sapId} exiting (was entered)`);
       log.exitTime = now;
       log.status = 'exited';
 
@@ -194,6 +217,7 @@ exports.processScan = async (req, res) => {
       action = 'exit';
     } else {
       // Already exited → new entry (re-entry)
+      console.log(`[SCAN ACTION] Student ${sapId} re-entering (was exited)`);
       log = await EntryLog.create({
         sapId,
         studentName: student.name,

@@ -59,10 +59,28 @@ const markTerminalSeen = async (terminal, now, deviceName) => {
 
 const processEntryExit = async (student, terminal, now) => {
   const today = formatISTDate(now);
-  let log = await EntryLog.findOne({ sapId: student.sapId, date: today }).sort({ createdAt: -1 });
+  // Fetch the LATEST log for today (by createdAt DESC) to toggle status correctly
+  let log = await EntryLog.findOne({ sapId: student.sapId, date: today })
+    .sort({ createdAt: -1 })
+    .exec();
+  
+  // Debug log: check what we fetched
+  if (log) {
+    console.log(`[FINGERPRINT DEBUG] Found latest log for ${student.sapId}:`, {
+      logId: log._id,
+      status: log.status,
+      createdAt: log.createdAt,
+      entryTime: log.entryTime,
+      exitTime: log.exitTime,
+    });
+  } else {
+    console.log(`[FINGERPRINT DEBUG] No existing log found for ${student.sapId} on ${today}`);
+  }
+  
   let action;
 
   if (!log) {
+    console.log(`[FINGERPRINT ACTION] New student entry for ${student.sapId}`);
     log = await EntryLog.create({
       sapId: student.sapId,
       studentName: student.name,
@@ -74,6 +92,7 @@ const processEntryExit = async (student, terminal, now) => {
     });
     action = 'entry';
   } else if (log.status === 'entered') {
+    console.log(`[FINGERPRINT ACTION] Student ${student.sapId} exiting (was entered)`);
     log.exitTime = now;
     log.status = 'exited';
 
@@ -87,6 +106,7 @@ const processEntryExit = async (student, terminal, now) => {
     await log.save();
     action = 'exit';
   } else {
+    console.log(`[FINGERPRINT ACTION] Student ${student.sapId} re-entering (was exited)`);
     log = await EntryLog.create({
       sapId: student.sapId,
       studentName: student.name,
