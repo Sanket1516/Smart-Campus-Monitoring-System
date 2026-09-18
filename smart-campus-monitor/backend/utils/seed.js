@@ -6,6 +6,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const connectDB = require('../config/db');
+const Admin = require('../models/Admin');
 const Student = require('../models/Student');
 const Hostel = require('../models/Hostel');
 const EntryLog = require('../models/EntryLog');
@@ -15,6 +16,37 @@ const formatDateLocal = (date = new Date()) => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+const ensureInitialCampusData = async () => {
+  let admin = await Admin.findOne({ role: 'admin' });
+  if (!admin) {
+    const password = process.env.INITIAL_ADMIN_PASSWORD;
+    if (!password || password.length < 6) {
+      throw new Error('INITIAL_ADMIN_PASSWORD must be set and contain at least 6 characters');
+    }
+    admin = await Admin.create({
+      username: process.env.INITIAL_ADMIN_USERNAME || 'admin',
+      password,
+      name: process.env.INITIAL_ADMIN_NAME || 'Campus Administrator',
+      email: process.env.INITIAL_ADMIN_EMAIL || '',
+      role: 'admin',
+    });
+    console.log(`Created initial admin: ${admin.username}`);
+  }
+
+  const hostels = [
+    { name: 'Boys Hostel A', code: 'BHA', type: 'boys' },
+    { name: 'Girls Hostel B', code: 'GHB', type: 'girls' },
+  ];
+  for (const hostelData of hostels) {
+    await Hostel.findOneAndUpdate(
+      { code: hostelData.code },
+      { ...hostelData, warden: admin._id, createdBy: admin._id },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  }
+  console.log('Initial admin and hostels are ready');
 };
 
 const students = [
@@ -238,6 +270,7 @@ const students = [
 const seed = async () => {
   try {
     await connectDB();
+    await ensureInitialCampusData();
     console.log('Clearing students collection...');
     const deleteResult = await Student.deleteMany({});
     console.log(`Deleted ${deleteResult.deletedCount} students`);
