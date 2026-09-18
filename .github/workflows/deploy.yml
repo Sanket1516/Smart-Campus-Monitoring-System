@@ -7,7 +7,7 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: smart-campus-monitor
-  ECS_SERVICE_BACKEND: smart-campus-backend-service
+  ECS_SERVICE_BACKEND: smart-campus-backend-task-service-0jf0wkha
   ECS_CLUSTER_BACKEND: smart-campus-cluster
   ECS_TASK_DEFINITION_BACKEND: .github/aws/backend-task-definition.json
   ECS_SERVICE_FRONTEND: smart-campus-frontend-service
