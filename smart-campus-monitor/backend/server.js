@@ -106,9 +106,11 @@ app.get('/metrics', async (_req, res) => {
 // Error handler
 app.use(errorHandler);
 
-startTerminalJobs();
-startHostellerJobs();
-attachSocketServer(httpServer);
+if (process.env.NODE_ENV !== 'test') {
+  startTerminalJobs();
+  startHostellerJobs();
+  attachSocketServer(httpServer);
+}
 
 const PORT = process.env.PORT || 5000;
 if (process.env.NODE_ENV !== 'test') {
