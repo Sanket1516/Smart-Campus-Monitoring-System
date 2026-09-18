@@ -5,9 +5,8 @@ on:
     branches: [ "main" ]
 
 env:
-  AWS_REGION: us-east-1                   # set this to your preferred AWS region, e.g. us-west-1
-  ECR_REPOSITORY_BACKEND: smart-campus-backend
-  ECR_REPOSITORY_FRONTEND: smart-campus-frontend
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: smart-campus-monitor
   ECS_SERVICE_BACKEND: smart-campus-backend-service
   ECS_CLUSTER_BACKEND: smart-campus-cluster
   ECS_TASK_DEFINITION_BACKEND: .github/aws/backend-task-definition.json
@@ -75,64 +74,63 @@ jobs:
       id: build-backend-image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
+        IMAGE_TAG: backend-${{ github.sha }}
       working-directory: ./backend
       run: |
-        # Build a docker container and push it to ECR so that it can be deployed to ECS.
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG .
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
-        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG" >> $GITHUB_OUTPUT
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
     - name: Build, tag, and push frontend image to Amazon ECR
       id: build-frontend-image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
+        IMAGE_TAG: frontend-${{ github.sha }}
       working-directory: ./frontend
       run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG .
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG
-        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG" >> $GITHUB_OUTPUT
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-    # To deploy properly, you must have your ECS task definition JSON files stored in the repository.
-    # Alternatively, you can pull the current definition directly from AWS if you prefer not maintaining it in Git:
+    # # To deploy properly, you must have your ECS task definition JSON files stored in the repository.
+    # # Alternatively, you can pull the current definition directly from AWS if you prefer not maintaining it in Git:
     
-    - name: Download current backend task definition
-      run: |
-        aws ecs describe-task-definition --task-definition smart-campus-backend-task --query taskDefinition > backend-task-definition.json
+    # - name: Download current backend task definition
+    #   run: |
+    #     aws ecs describe-task-definition --task-definition smart-campus-backend-task --query taskDefinition > backend-task-definition.json
         
-    - name: Download current frontend task definition
-      run: |
-        aws ecs describe-task-definition --task-definition smart-campus-frontend-task --query taskDefinition > frontend-task-definition.json
+    # - name: Download current frontend task definition
+    #   run: |
+    #     aws ecs describe-task-definition --task-definition smart-campus-frontend-task --query taskDefinition > frontend-task-definition.json
 
-    - name: Fill in the new backend image ID in the Amazon ECS task definition
-      id: task-def-backend
-      uses: aws-actions/amazon-ecs-render-task-definition@v1
-      with:
-        task-definition: backend-task-definition.json
-        container-name: ${{ env.CONTAINER_NAME_BACKEND }}
-        image: ${{ steps.build-backend-image.outputs.image }}
+    # - name: Fill in the new backend image ID in the Amazon ECS task definition
+    #   id: task-def-backend
+    #   uses: aws-actions/amazon-ecs-render-task-definition@v1
+    #   with:
+    #     task-definition: backend-task-definition.json
+    #     container-name: ${{ env.CONTAINER_NAME_BACKEND }}
+    #     image: ${{ steps.build-backend-image.outputs.image }}
 
-    - name: Deploy Amazon ECS backend task definition
-      uses: aws-actions/amazon-ecs-deploy-task-definition@v2
-      with:
-        task-definition: ${{ steps.task-def-backend.outputs.task-definition }}
-        service: ${{ env.ECS_SERVICE_BACKEND }}
-        cluster: ${{ env.ECS_CLUSTER_BACKEND }}
-        wait-for-service-stability: true
+    # - name: Deploy Amazon ECS backend task definition
+    #   uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+    #   with:
+    #     task-definition: ${{ steps.task-def-backend.outputs.task-definition }}
+    #     service: ${{ env.ECS_SERVICE_BACKEND }}
+    #     cluster: ${{ env.ECS_CLUSTER_BACKEND }}
+    #     wait-for-service-stability: true
 
-    - name: Fill in the new frontend image ID in the Amazon ECS task definition
-      id: task-def-frontend
-      uses: aws-actions/amazon-ecs-render-task-definition@v1
-      with:
-        task-definition: frontend-task-definition.json
-        container-name: ${{ env.CONTAINER_NAME_FRONTEND }}
-        image: ${{ steps.build-frontend-image.outputs.image }}
+    # - name: Fill in the new frontend image ID in the Amazon ECS task definition
+    #   id: task-def-frontend
+    #   uses: aws-actions/amazon-ecs-render-task-definition@v1
+    #   with:
+    #     task-definition: frontend-task-definition.json
+    #     container-name: ${{ env.CONTAINER_NAME_FRONTEND }}
+    #     image: ${{ steps.build-frontend-image.outputs.image }}
 
-    - name: Deploy Amazon ECS frontend task definition
-      uses: aws-actions/amazon-ecs-deploy-task-definition@v2
-      with:
-        task-definition: ${{ steps.task-def-frontend.outputs.task-definition }}
-        service: ${{ env.ECS_SERVICE_FRONTEND }}
-        cluster: ${{ env.ECS_CLUSTER_FRONTEND }}
-        wait-for-service-stability: true
+    # - name: Deploy Amazon ECS frontend task definition
+    #   uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+    #   with:
+    #     task-definition: ${{ steps.task-def-frontend.outputs.task-definition }}
+    #     service: ${{ env.ECS_SERVICE_FRONTEND }}
+    #     cluster: ${{ env.ECS_CLUSTER_FRONTEND }}
+    #     wait-for-service-stability: true
