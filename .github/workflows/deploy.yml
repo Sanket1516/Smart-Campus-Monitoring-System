@@ -34,19 +34,19 @@ jobs:
           frontend/package-lock.json
 
     - name: Install backend dependencies
-      working-directory: ./backend
+      working-directory: ./smart-campus-monitor/backend
       run: npm ci
 
     - name: Run backend tests
-      working-directory: ./backend
+      working-directory: ./smart-campus-monitor/backend
       run: npm test
 
     - name: Install frontend dependencies
-      working-directory: ./frontend
+      working-directory: ./smart-campus-monitor/frontend
       run: npm ci
 
     - name: Run frontend tests
-      working-directory: ./frontend
+      working-directory: ./smart-campus-monitor/frontend
       run: npm test
 
   deploy:
@@ -75,7 +75,7 @@ jobs:
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: backend-${{ github.sha }}
-      working-directory: ./backend
+      working-directory: ./smart-campus-monitor/backend
       run: |
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
@@ -86,7 +86,7 @@ jobs:
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: frontend-${{ github.sha }}
-      working-directory: ./frontend
+      working-directory: ./smart-campus-monitor/frontend
       run: |
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
