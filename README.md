@@ -955,6 +955,65 @@ Biometric Terminal Flow (Primary Automated Path):
 
 ---
 
+## Complete AWS CI/CD Deployment Guide
+
+A step-by-step, beginner-friendly guide to deploying this MERN stack application to AWS Fargate using a fully automated GitHub Actions CI/CD pipeline.
+
+### Step 1: Local Testing & Preparation
+Before deploying to the cloud, ensure the app works locally.
+1. **Environment Variables:** Create `.env` files in both `frontend` and `backend` using the provided `.env.example` templates.
+2. **Run Backend:** `cd backend && npm install && npm run dev`
+3. **Run Frontend:** `cd frontend && npm install && npm run dev`
+4. **Seed Database:** `cd backend && npm run seed` to insert initial test data.
+5. Verify you can log into the local frontend.
+
+### Step 2: Dockerization
+The application must be containerized to run on AWS Fargate.
+1. **Backend Dockerfile:** Found in `backend/Dockerfile`. It uses a multi-stage Node build, installs dependencies, and exposes Port `5000`.
+2. **Frontend Dockerfile:** Found in `frontend/Dockerfile`. It uses Node to build the React Vite app, and then uses Nginx to serve the static files on Port `80`.
+
+### Step 3: AWS Infrastructure Setup
+The cloud environment requires a Load Balancer to route traffic.
+1. **Application Load Balancer (ALB):** 
+   - Go to EC2 -> Load Balancers -> Create ALB.
+   - **Crucial:** Enable ALL Availability Zones in the network mapping.
+   - Create a Security Group for the ALB allowing HTTP (Port 80) from Anywhere.
+2. **Target Groups:**
+   - Go to EC2 -> Target Groups.
+   - Create `frontend-tg` (Port 80) and `backend-tg` (Port 5000). 
+   - **Crucial:** Target Type MUST be **IP addresses** (Required for AWS Fargate).
+3. **ALB Listener Rules:**
+   - Default Port 80 listener routes to `frontend-tg`.
+   - Add a rule: If Path matches `/api/*`, forward to `backend-tg`.
+
+### Step 4: AWS ECS Cluster & Services
+This is where your containers actually run.
+1. **Cluster:** Create an ECS Cluster named `smart-campus-cluster` using AWS Fargate.
+2. **Task Definitions:**
+   - Create `smart-campus-backend-task` (Port 5000). Manually add your `MONGO_URI` and `JWT_SECRET` as environment variables here (since `.env` is not pushed to GitHub).
+   - Create `smart-campus-frontend-task` (Port 80).
+3. **Services:**
+   - Create `smart-campus-backend-svc` and `smart-campus-frontend-service` in your cluster.
+   - **Crucial:** In the Load Balancing section, attach the ALB and select the correct Target Group. Skipping this causes a 503 error.
+
+### Step 5: CI/CD Setup with GitHub Actions
+Automate the deployment pipeline so that every push to the `main` branch updates AWS automatically.
+1. **GitHub Secrets:** Add `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` to your repository secrets.
+2. **Workflow File:** The pipeline is defined in `.github/workflows/deploy.yml`. It handles:
+   - Testing the codebase.
+   - Building new Docker images and pushing them to AWS ECR.
+   - Fetching the active ECS Task Definition (preserving secrets).
+   - Updating the ECS Service with the new image, guaranteeing zero-downtime rolling deployments.
+
+### ⚠️ Common Deployment Mistakes to Avoid
+- **MongoDB IP Whitelist:** Fargate uses dynamic IPs. You *must* whitelist `0.0.0.0/0` in MongoDB Atlas, or your backend will crash.
+- **Nginx Startup Crash:** Do not hardcode `proxy_pass http://backend:5000;`. Use variables so Nginx resolves it at runtime, otherwise it crashes on boot.
+- **CORS Errors:** Do not hardcode API IPs in the frontend `.env.production`. Set `VITE_API_URL=/api`. The ALB will route it seamlessly, completely eliminating CORS.
+- **ALB Subnet Mismatch:** If your ALB and ECS Service use different subnets, health checks will fail. Enable all subnets on the ALB.
+- **503 Errors:** Always ensure you attach the Target Group when creating your ECS service.
+
+---
+
 ## Future Scope
 
 1. **Face Recognition** -- Integrate a face detection model (e.g., face-api.js or a Python microservice with OpenCV/dlib) as an additional identity-verification factor.
