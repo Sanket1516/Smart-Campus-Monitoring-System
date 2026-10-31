@@ -98,6 +98,8 @@ describe('three-device architecture (SIMULATED terminals)', () => {
     await expect(assertDeviceRoleAvailable(TerminalConfig, { _id: own._id, deviceRole: 'GATE_ENTRY' })).resolves.toBe(true);
     await expect(assertDeviceRoleAvailable(TerminalConfig, { deviceRole: 'GATE_TOGGLE' })).resolves.toBe(true);
     await expect(assertDeviceRoleAvailable(TerminalConfig, { deviceRole: 'GATE_EXIT', enabled: false })).resolves.toBe(true);
+    // A SIMULATED gate does not collide with the real one (and vice versa).
+    await expect(assertDeviceRoleAvailable(TerminalConfig, { deviceRole: 'GATE_ENTRY', simulated: true })).resolves.toBe(true);
   });
 
   it('enrol once on Device 1 → both gates receive and verify → FULLY_SYNCHRONIZED; entry/exit by role', async () => {

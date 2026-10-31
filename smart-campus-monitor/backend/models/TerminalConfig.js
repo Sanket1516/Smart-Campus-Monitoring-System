@@ -227,7 +227,7 @@ terminalConfigSchema.pre('save', async function (next) {
   try {
     // Required lazily to keep the model free of service imports at load time.
     const { assertDeviceRoleAvailable } = require('../services/terminals/deviceRoles');
-    await assertDeviceRoleAvailable(this.constructor, { _id: this._id, deviceRole: this.deviceRole, enabled: this.enabled });
+    await assertDeviceRoleAvailable(this.constructor, { _id: this._id, deviceRole: this.deviceRole, enabled: this.enabled, simulated: this.simulated });
     return next();
   } catch (error) {
     return next(error);

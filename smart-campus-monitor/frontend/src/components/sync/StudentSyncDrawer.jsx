@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { HiOutlineRefresh, HiOutlineTrash, HiOutlineX } from 'react-icons/hi';
 import { eraseBiometricsApi, getStudentSyncApi, resyncStudentApi, setStudentGroupsApi } from '../../services/api';
 import FingerprintStatusBadge from './FingerprintStatusBadge';
+import { GateStatusBadge, ROLE_LABELS, SyncStatusBadge } from './SyncStatusBadges';
 import ConsentForm from './ConsentForm';
 import useSyncEvents from './useSyncEvents';
 import { Pill, btnDanger, btnPrimary, btnSecondary, errorMessage, formatDateTime, input, td, th } from './syncUi';
@@ -89,11 +90,27 @@ export default function StudentSyncDrawer({ studentId, onClose, readOnly = false
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <FingerprintStatusBadge status={data.student.fingerprintStatus} />
+              <SyncStatusBadge status={data.syncStatus} />
               <Pill value={data.student.accessStatus === 'blocked' ? 'failed' : 'ok'} label={data.student.accessStatus} />
               {Object.entries(counts).map(([status, count]) => (
                 <Pill key={status} value={status} label={`${count} ${status}`} />
               ))}
             </div>
+
+            {data.gateSync?.length > 0 && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {data.gateSync.map((g) => (
+                  <div key={g.terminalSN} className="rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700">
+                    <div className="font-medium text-gray-800 dark:text-gray-100">
+                      {ROLE_LABELS[g.deviceRole] || g.deviceRole} · {g.terminalLabel || g.terminalSN}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <GateStatusBadge gate={g} /> <span className="text-gray-500">{g.detail}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {!data.consent && !readOnly && <ConsentForm studentId={studentId} onSaved={load} />}
             {data.consent && (

@@ -6,9 +6,15 @@ const uniqueRoles = () =>
     .filter(Boolean);
 
 /** Throws (statusCode 409) if another enabled terminal already has this unique role. */
-const assertDeviceRoleAvailable = async (TerminalModel, { _id = null, deviceRole, enabled = true }) => {
+// Real and SIMULATED terminals are counted separately, so a simulator can run beside real devices.
+const assertDeviceRoleAvailable = async (TerminalModel, { _id = null, deviceRole, enabled = true, simulated = false }) => {
   if (!uniqueRoles().includes(deviceRole) || enabled === false) return true;
-  const clash = await TerminalModel.findOne({ deviceRole, enabled: { $ne: false }, ...(_id ? { _id: { $ne: _id } } : {}) })
+  const clash = await TerminalModel.findOne({
+    deviceRole,
+    enabled: { $ne: false },
+    simulated: simulated ? true : { $ne: true },
+    ...(_id ? { _id: { $ne: _id } } : {}),
+  })
     .select('deviceSN terminalLabel')
     .lean();
   if (clash) {

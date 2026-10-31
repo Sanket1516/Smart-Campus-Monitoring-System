@@ -18,6 +18,7 @@ import {
 import SyncHealthPanel from '../components/sync/SyncHealthPanel';
 import useSyncEvents from '../components/sync/useSyncEvents';
 import { Pill, btnPrimary, btnSecondary, card, errorMessage, formatDateTime, input, td, th } from '../components/sync/syncUi';
+import { ROLE_LABELS, SimulatedBadge } from '../components/sync/SyncStatusBadges';
 
 const TABS = [
   ['terminals', 'Terminals'],
@@ -78,24 +79,59 @@ function TerminalsTab() {
     ).then(() => setEditing(null));
 
   return (
-    <Table head={['Terminal', 'Status', 'Dialect / push', 'Firmware / algorithm', 'Groups', 'Last seen / sync', 'Queue', 'Actions']}>
+    <Table head={['Terminal', 'Device role', 'Status', 'Protocol / dialect', 'Firmware / algorithm', 'Groups', 'Users / fingerprints', 'Last seen / sync', 'Queue', 'Actions']}>
       {terminals.map((t) => (
         <tr key={t.serialNumber} className={t.enabled ? '' : 'opacity-60'}>
           <td className={td}>
-            <div className="font-medium">{t.terminalLabel}</div>
-            <div className="text-xs text-gray-500">
-              {t.serialNumber} · {t.ip || 'no IP'} · {t.role}
+            <div className="flex items-center gap-1 font-medium">
+              {t.terminalLabel} <SimulatedBadge show={t.simulated} />
             </div>
+            <div className="text-xs text-gray-500">
+              {t.serialNumber} · {t.ip || 'no IP'} · {t.deviceModel}
+            </div>
+          </td>
+          <td className={td}>
+            {t.deviceRole === 'ADMIN_ENROLLMENT' ? (
+              <span className="text-xs font-medium">{ROLE_LABELS.ADMIN_ENROLLMENT}</span>
+            ) : (
+              <select
+                className={`${input} w-44 py-1 text-xs`}
+                value={t.deviceRole}
+                onChange={(e) => act(() => updateSyncTerminalApi(t.serialNumber, { deviceRole: e.target.value }), 'Device role saved')}
+              >
+                {['GATE_ENTRY', 'GATE_EXIT', 'GATE_TOGGLE'].map((role) => (
+                  <option key={role} value={role}>
+                    {ROLE_LABELS[role]}
+                  </option>
+                ))}
+              </select>
+            )}
+            <details className="mt-1 text-xs text-gray-500">
+              <summary className="cursor-pointer">Capabilities</summary>
+              <ul className="mt-1 space-y-0.5">
+                {t.capabilities.map((c) => (
+                  <li key={c.operation} title={c.description}>
+                    {c.operation}: <span className={c.state === 'verified' ? 'text-green-600' : c.state === 'unsupported' ? 'text-red-600' : ''}>{c.state}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           </td>
           <td className={td}>
             <Pill value={t.online ? 'online' : 'offline'} />
             {!t.enabled && <div className="text-xs text-gray-500">disabled</div>}
           </td>
           <td className={td}>
-            <Pill value={t.dialect === 'unknown' ? 'pending' : 'ok'} label={t.dialect} />
-            <div className="text-xs text-gray-500">
-              {t.dialectSource || '—'} · push {t.pushVersion || '?'}
-            </div>
+            {t.communicationProtocol === 'zk_tcp_pull' ? (
+              <Pill value="sent" label="pull (ZK TCP)" />
+            ) : (
+              <>
+                <Pill value={t.dialect === 'unknown' ? 'pending' : 'ok'} label={`push · ${t.dialect}`} />
+                <div className="text-xs text-gray-500">
+                  {t.dialectSource || '—'} · pushver {t.pushVersion || '?'}
+                </div>
+              </>
+            )}
           </td>
           <td className={`${td} text-xs`}>
             {t.firmware || '—'}
@@ -121,6 +157,12 @@ function TerminalsTab() {
                 {!t.groups.length && ' (default)'}
               </button>
             )}
+          </td>
+          <td className={`${td} text-xs`}>
+            {t.enrolledUsers} users
+            <div className="text-gray-500">
+              {t.fingerprintsStored} stored · {t.fingerprintsVerified} verified
+            </div>
           </td>
           <td className={`${td} text-xs`}>
             {formatDateTime(t.lastSeenAt)}
