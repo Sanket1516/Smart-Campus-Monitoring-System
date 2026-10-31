@@ -27,7 +27,7 @@ export default function TerminalDevice({
     state === 'ok' ? '#10b981' : state === 'denied' ? '#f04444' : state === 'scanning' ? '#22d3ee' : meta.accent;
   return (
     <div
-      className={`relative mx-auto select-none ${compact ? 'w-40' : 'w-56'} ${className}`}
+      className={`keep-dark relative mx-auto select-none ${compact ? 'w-40' : 'w-56'} ${className}`}
       role="img"
       aria-label={`${meta.label} terminal ${offline ? 'offline' : state}`}
     >

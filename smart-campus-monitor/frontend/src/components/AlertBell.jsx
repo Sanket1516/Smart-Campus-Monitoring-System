@@ -36,7 +36,8 @@ export default function AlertBell() {
       <button
         type="button"
         onClick={handleToggle}
-        className="relative inline-flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-2 text-gray-700 transition-colors hover:bg-gray-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+        className="relative inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] p-2 text-ink-200 transition-colors hover:bg-white/10 hover:text-white"
+        aria-label="Notifications"
         title="Alerts"
       >
         <HiOutlineBell className="h-5 w-5" />

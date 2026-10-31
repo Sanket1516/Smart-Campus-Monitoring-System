@@ -265,7 +265,7 @@ export default function WardenPortal() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between relative overflow-hidden rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between relative overflow-hidden keep-dark rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
         <div className="max-w-3xl">
           <p className="eyebrow mb-3">Safety · Exit approvals</p>
           <h1 className="display-md text-white">Secure Movement. Authorized Decisions.</h1>

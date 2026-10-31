@@ -334,8 +334,18 @@ html.dark .bg-purple-50,
 html.dark .bg-purple-100 {
   background-color: rgba(167, 139, 250, 0.12) !important;
 }
-html.dark .text-purple-700 {
+html.dark .text-purple-600,
+html.dark .text-purple-700,
+html.dark .text-violet-600,
+html.dark .text-violet-700 {
   color: #c4b5fd !important;
+}
+html.dark .bg-violet-50,
+html.dark .bg-violet-100,
+html.dark .bg-pink-50,
+html.dark .bg-teal-50,
+html.dark .bg-cyan-50 {
+  background-color: rgba(167, 139, 250, 0.12) !important;
 }
 html.dark .border-red-200,
 html.dark .border-red-300 {
@@ -437,4 +447,87 @@ html.dark table thead {
     opacity: 1;
     transform: none;
   }
+}
+
+/* ── Light mode for the console content area (.light-scope) ─────────────────────
+   The shell stays dark. Brand pieces marked .keep-dark (page header bands, terminal
+   renderings, 3D/diagram stages) keep their dark styling. Everything else built for the
+   dark theme is flipped to dark text on light surfaces. */
+.light-scope {
+  color: #0f172a;
+}
+.light-scope .panel:not(.keep-dark *),
+.light-scope .panel-flat:not(.keep-dark *) {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 16px 32px -24px rgba(15, 23, 42, 0.25);
+  backdrop-filter: none;
+}
+.light-scope :is(.text-white, .text-ink-50, .text-ink-100):not(.keep-dark, .keep-dark *, .btn-accent, .btn-accent *, .bg-primary-600, .bg-primary-600 *) {
+  color: #0b1220;
+}
+.light-scope .text-ink-200:not(.keep-dark *) {
+  color: #334155;
+}
+.light-scope .text-ink-300:not(.keep-dark *) {
+  color: #475569;
+}
+.light-scope :is(.text-ink-400, .text-ink-500):not(.keep-dark *) {
+  color: #64748b;
+}
+.light-scope :is(.border-white\/5, .border-white\/10, .border-white\/15, .border-white\/\[0\.07\], .border-white\/20, .border-white\/25):not(.keep-dark, .keep-dark *) {
+  border-color: #e2e8f0;
+}
+.light-scope :is(.bg-white\/\[0\.02\], .bg-white\/\[0\.025\], .bg-white\/\[0\.03\], .bg-white\/\[0\.04\], .bg-white\/\[0\.05\], .bg-white\/\[0\.06\], .bg-white\/\[0\.07\]):not(.keep-dark *) {
+  background-color: rgba(15, 23, 42, 0.035);
+}
+.light-scope :is(.bg-ink-800\/80, .bg-ink-850, .bg-ink-900, .bg-ink-900\/60, .bg-ink-800):not(.keep-dark, .keep-dark *) {
+  background-color: #ffffff;
+}
+.light-scope :is(.hover\:bg-white\/\[0\.025\], .hover\:bg-white\/\[0\.02\], .hover\:bg-white\/5):hover:not(.keep-dark *) {
+  background-color: rgba(15, 23, 42, 0.04);
+}
+.light-scope .eyebrow:not(.keep-dark *) {
+  color: #0e7490;
+}
+.light-scope .btn-ghost:not(.keep-dark *) {
+  color: #0f172a;
+  border-color: #cbd5e1;
+  background: #ffffff;
+}
+.light-scope .btn-ghost:hover:not(.keep-dark *) {
+  background: #f1f5f9;
+}
+.light-scope .chip-ok:not(.keep-dark *) {
+  color: #047857;
+}
+.light-scope .chip-bad:not(.keep-dark *) {
+  color: #b91c1c;
+}
+.light-scope .chip-warn:not(.keep-dark *) {
+  color: #b45309;
+}
+.light-scope .chip-info:not(.keep-dark *) {
+  color: #1d4ed8;
+}
+.light-scope .chip-off:not(.keep-dark *) {
+  color: #475569;
+}
+.light-scope :is(.text-emerald-300, .text-emerald-200):not(.keep-dark *) {
+  color: #047857;
+}
+.light-scope :is(.text-red-300, .text-red-200):not(.keep-dark *) {
+  color: #b91c1c;
+}
+.light-scope :is(.text-amber-300, .text-amber-200):not(.keep-dark *) {
+  color: #b45309;
+}
+.light-scope :is(.text-cyan-300, .text-cyan-200, .text-\[\#a5c0ff\], .text-\[\#8fb0ff\]):not(.keep-dark *) {
+  color: #1d4ed8;
+}
+.light-scope :is(input, select, textarea):not(.keep-dark *) {
+  color: #0f172a;
+}
+.light-scope .metric.text-white:not(.keep-dark *) {
+  color: #0b1220;
 }
