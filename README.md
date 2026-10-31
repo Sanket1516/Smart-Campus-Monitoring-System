@@ -959,6 +959,62 @@ Biometric Terminal Flow (Primary Automated Path):
 
 A step-by-step, beginner-friendly guide to deploying this MERN stack application to AWS Fargate using a fully automated GitHub Actions CI/CD pipeline.
 
+### System Architecture Diagram
+
+```mermaid
+graph TD
+    %% Users and Devs
+    Developer["👨‍💻 Developer"]
+    User["🌐 Internet Users"]
+
+    %% CI/CD Pipeline
+    subgraph "CI/CD (GitHub)"
+        Repo[("GitHub Repository")]
+        GHA["GitHub Actions"]
+    end
+
+    %% AWS Cloud
+    subgraph "AWS Cloud (us-east-1)"
+        ECR["🐳 Amazon ECR<br/>(Docker Registry)"]
+        
+        subgraph "VPC (Public & Private Subnets)"
+            ALB["⚖️ Application Load Balancer"]
+            
+            subgraph "ECS Cluster (AWS Fargate)"
+                FrontendTG["Frontend Target Group"]
+                BackendTG["Backend Target Group"]
+                
+                FrontendService["🖥️ Frontend Service<br/>(React + Nginx)"]
+                BackendService["⚙️ Backend Service<br/>(Node.js + Express)"]
+            end
+        end
+    end
+
+    %% External DB
+    MongoDB[("🍃 MongoDB Atlas")]
+
+    %% Connections - CI/CD
+    Developer -->|"git push"| Repo
+    Repo -->|"triggers"| GHA
+    GHA -->|"1. Build & Push Image"| ECR
+    GHA -->|"2. Update Task Definition"| FrontendService
+    GHA -->|"2. Update Task Definition"| BackendService
+
+    %% Connections - Runtime
+    ECR -.->|"Pulls Image"| FrontendService
+    ECR -.->|"Pulls Image"| BackendService
+
+    User -->|"HTTP/HTTPS"| ALB
+    ALB -->|"Path: /"| FrontendTG
+    ALB -->|"Path: /api/*"| BackendTG
+    
+    FrontendTG --> FrontendService
+    BackendTG --> BackendService
+    
+    BackendService -->|"Mongoose (Port 27017)"| MongoDB
+```
+
+
 ### Step 1: Local Testing & Preparation
 Before deploying to the cloud, ensure the app works locally.
 1. **Environment Variables:** Create `.env` files in both `frontend` and `backend` using the provided `.env.example` templates.
@@ -996,10 +1052,16 @@ This is where your containers actually run.
    - Create `smart-campus-backend-svc` and `smart-campus-frontend-service` in your cluster.
    - **Crucial:** In the Load Balancing section, attach the ALB and select the correct Target Group. Skipping this causes a 503 error.
 
-### Step 5: CI/CD Setup with GitHub Actions
+### Step 5: IAM User & CI/CD Setup with GitHub Actions
 Automate the deployment pipeline so that every push to the `main` branch updates AWS automatically.
-1. **GitHub Secrets:** Add `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` to your repository secrets.
-2. **Workflow File:** The pipeline is defined in `.github/workflows/deploy.yml`. It handles:
+1. **Create an IAM User for GitHub:**
+   - Go to AWS IAM -> Users -> Create User (e.g., `github-actions-user`).
+   - Grant this user permissions to access **ECS** (to update services) and **ECR** (to push Docker images). *Recommendation: Attach `AmazonECS_FullAccess` and `AmazonEC2ContainerRegistryFullAccess` policies.*
+   - Generate an **Access Key** for this user (for third-party apps).
+2. **GitHub Secrets:** 
+   - Go to your GitHub Repository -> Settings -> Secrets and variables -> Actions.
+   - Add your newly generated IAM keys as repository secrets: `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+3. **Workflow File:** The pipeline is defined in `.github/workflows/deploy.yml`. It uses your IAM credentials to handle:
    - Testing the codebase.
    - Building new Docker images and pushing them to AWS ECR.
    - Fetching the active ECS Task Definition (preserving secrets).
