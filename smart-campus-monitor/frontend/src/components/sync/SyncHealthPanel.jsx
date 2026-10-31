@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { getSyncOverviewApi } from '../../services/api';
 import useSyncEvents from './useSyncEvents';
 import { card, formatDateTime } from './syncUi';
+import DeviceOverview from './DeviceOverview';
+import { SyncStatusBadge } from './SyncStatusBadges';
 
 const Stat = ({ label, value, tone = 'text-gray-900 dark:text-gray-100' }) => (
   <div>
@@ -36,8 +38,14 @@ export default function SyncHealthPanel() {
   if (!data) return <div className={`${card} text-sm text-gray-500`}>Loading sync health…</div>;
 
   return (
-    <div className={card}>
-      <div className="mb-3 flex items-center justify-between">
+    <div className={`${card} space-y-4`}>
+      {data.simulationMode && (
+        <div className="rounded-lg border border-purple-300 bg-purple-50 p-3 text-sm font-medium text-purple-800 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-200">
+          SIMULATION MODE is on. Data from simulated terminals is labelled SIMULATED and is never sent to real devices.
+        </div>
+      )}
+      <DeviceOverview devices={data.devices} />
+      <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Terminal sync health</h3>
         <span className="text-xs text-gray-500">
           Last reconciliation: {data.lastReconciliation ? formatDateTime(data.lastReconciliation.startedAt) : 'never'}
@@ -52,7 +60,17 @@ export default function SyncHealthPanel() {
         <Stat label="Failed commands" value={data.commands.failed} tone={data.commands.failed ? 'text-red-600' : undefined} />
         <Stat label="Awaiting fingerprint" value={data.students.awaitingFingerprint} tone="text-amber-600" />
       </div>
-      <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+      {data.students.bySyncStatus && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-gray-500">Students:</span>
+          {Object.entries(data.students.bySyncStatus).map(([status, count]) => (
+            <span key={status} className="flex items-center gap-1">
+              <SyncStatusBadge status={status} /> {count}
+            </span>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-gray-500 dark:text-gray-400">
         Reconcile source: {data.config.reconcileSource} · sidecar {data.config.sidecar ? 'configured' : 'not configured'} · {data.config.maxCommandsPerPoll} command(s)/poll · Size= in {data.config.templateSizeMode}
       </p>
     </div>

@@ -13,7 +13,8 @@ import {
 import ConsentForm from './ConsentForm';
 import FingerprintStatusBadge from './FingerprintStatusBadge';
 import useSyncEvents from './useSyncEvents';
-import { Pill, btnPrimary, btnSecondary, card, errorMessage, input, td, th } from './syncUi';
+import { btnPrimary, btnSecondary, card, errorMessage, input, td, th } from './syncUi';
+import { EnrollmentStateBadge, GateStatusBadge, ROLE_LABELS, SimulatedBadge, SyncStatusBadge, gateFor } from './SyncStatusBadges';
 
 /**
  * Enrol once, copy everywhere: pick student → consent → target groups → capture on the
@@ -64,12 +65,15 @@ export default function SyncEnrollmentFlow({ initialStudentId = '' }) {
   }, [studentId]); // eslint-disable-line react-hooks/exhaustive-deps
   useSyncEvents(load);
 
-  // Poll while waiting for the template (push upload may take a few polls).
+  // Poll while capture or synchronisation is in progress.
+  const inProgress =
+    status?.enrollmentState === 'waiting_capture' ||
+    (status?.fingerprintStatus === 'enrolled' && !['FULLY_SYNCHRONIZED', 'BLOCKED_REMOVED'].includes(status?.syncStatus));
   useEffect(() => {
-    if (!started || status?.fingerprintStatus === 'enrolled') return undefined;
+    if (!studentId || !inProgress) return undefined;
     const timer = setInterval(load, 5000);
     return () => clearInterval(timer);
-  }, [started, status?.fingerprintStatus, load]);
+  }, [studentId, inProgress, load]);
 
   const search = async (event) => {
     event.preventDefault();
@@ -86,7 +90,7 @@ export default function SyncEnrollmentFlow({ initialStudentId = '' }) {
     try {
       const response = await startSyncEnrollmentApi(studentId, { method, targetGroups: selectedGroups, fingerIndex: Number(finger) });
       setStarted(response.data);
-      toast.success('Enrolment started');
+      toast.success(response.data.simulated ? 'Enrolment started (SIMULATED device)' : 'Enrolment started on Device 1');
       await load();
     } catch (error) {
       toast.error(errorMessage(error));
@@ -115,7 +119,10 @@ export default function SyncEnrollmentFlow({ initialStudentId = '' }) {
   const toggleGroup = (group) =>
     setSelectedGroups((prev) => (prev.includes(group) ? prev.filter((g) => g !== group) : [...prev, group]));
 
-  const targets = (sync?.terminals || []).filter((t) => t.desired);
+  const gateSync = status?.gateSync || [];
+  const entryGate = gateFor(gateSync, 'GATE_ENTRY');
+  const exitGate = gateFor(gateSync, 'GATE_EXIT');
+  const canRetry = ['failed', 'timeout'].includes(status?.enrollmentState);
 
   return (
     <div className={`${card} space-y-4`}>
@@ -156,9 +163,26 @@ export default function SyncEnrollmentFlow({ initialStudentId = '' }) {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
             <span className="font-medium">{status.name}</span>
-            <span>PIN {status.pin || '(assigned on start)'}</span>
+            <span>ZK user ID {status.pin || '(assigned on start)'}</span>
             <FingerprintStatusBadge status={status.fingerprintStatus} />
+            <EnrollmentStateBadge state={status.enrollmentState} />
+            <SyncStatusBadge status={status.syncStatus} />
+            <SimulatedBadge show={status.enrollmentSimulated} />
           </div>
+          {status.accessStatus === 'blocked' && (
+            <p className="rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">Student is blocked. Unblock before enrolment.</p>
+          )}
+          {status.enrollmentError && (
+            <p className="rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+              Capture result: {status.enrollmentError}
+            </p>
+          )}
+          {status.enrollmentState === 'captured' && status.enrollmentDeviceSN && (
+            <p className="text-xs text-gray-500">
+              Captured on {status.enrollmentDeviceSN}
+              {status.fingerprintEnrolledAt ? ` at ${new Date(status.fingerprintEnrolledAt).toLocaleString('en-IN')}` : ''}.
+            </p>
+          )}
 
           {!status.consent ? (
             <ConsentForm studentId={studentId} onSaved={load} />
@@ -201,8 +225,8 @@ export default function SyncEnrollmentFlow({ initialStudentId = '' }) {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <button className={btnPrimary} onClick={start} disabled={busy}>
-                  Capture on enrollment terminal
+                <button className={btnPrimary} onClick={start} disabled={busy || status.accessStatus === 'blocked'}>
+                  {canRetry ? 'Retry enrolment on Device 1' : status.fingerprintStatus === 'enrolled' ? 'Re-enrol on Device 1' : 'Start enrolment on Device 1'}
                 </button>
                 <button className={btnSecondary} onClick={fetchTemplate} disabled={busy || !status.pin}>
                   <HiOutlineRefresh className="h-4 w-4" /> Fetch template
@@ -220,9 +244,12 @@ export default function SyncEnrollmentFlow({ initialStudentId = '' }) {
           <ol className="flex flex-wrap gap-3 text-xs">
             {[
               ['Consent', Boolean(status.consent)],
-              ['User on enrollment terminal', Boolean(status.pin)],
-              ['Template stored', status.fingerprintStatus === 'enrolled'],
-              ['Copied to all targets', targets.length > 0 && targets.every((t) => t.status === 'present')],
+              ['User on Device 1', Boolean(status.pin)],
+              ['Finger captured on Device 1', status.enrollmentState === 'captured' || status.fingerprintStatus === 'enrolled'],
+              ['Template stored (encrypted)', status.fingerprintStatus === 'enrolled'],
+              ['Gate Entry verified', entryGate?.status === 'verified'],
+              ['Gate Exit verified', exitGate?.status === 'verified'],
+              ['Fully synchronized', status.syncStatus === 'FULLY_SYNCHRONIZED'],
             ].map(([label, done], index) => (
               <li key={label} className={`rounded-full px-3 py-1 ${done ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>
                 {index + 1}. {label}
@@ -230,28 +257,34 @@ export default function SyncEnrollmentFlow({ initialStudentId = '' }) {
             ))}
           </ol>
 
-          {targets.length > 0 && (
+          {gateSync.length > 0 && (
             <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-800">
                   <tr>
-                    <th className={th}>Fan-out target</th>
+                    <th className={th}>Gate</th>
+                    <th className={th}>Terminal</th>
                     <th className={th}>Status</th>
-                    <th className={th}>Fingers on terminal</th>
+                    <th className={th}>Detail</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {targets.map((t) => (
-                    <tr key={t.terminalSN}>
-                      <td className={td}>
-                        {t.terminalLabel || t.terminalSN} <span className="text-xs text-gray-500">{t.online ? '' : '(offline – will sync on next poll)'}</span>
-                      </td>
-                      <td className={td}>
-                        <Pill value={t.status} />
-                      </td>
-                      <td className={td}>{t.fingers.length ? t.fingers.join(', ') : '—'}</td>
-                    </tr>
-                  ))}
+                  {gateSync.map((g) => {
+                    const terminal = (sync?.terminals || []).find((t) => t.terminalSN === g.terminalSN);
+                    return (
+                      <tr key={g.terminalSN}>
+                        <td className={td}>{ROLE_LABELS[g.deviceRole] || g.deviceRole}</td>
+                        <td className={td}>
+                          {g.terminalLabel || g.terminalSN}{' '}
+                          {terminal && !terminal.online && <span className="text-xs text-gray-500">(offline – syncs when it reconnects)</span>}
+                        </td>
+                        <td className={td}>
+                          <GateStatusBadge gate={g} />
+                        </td>
+                        <td className={`${td} whitespace-normal text-xs`}>{g.detail}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

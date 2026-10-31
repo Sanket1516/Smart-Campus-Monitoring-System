@@ -30,6 +30,10 @@ const createInitialForm = () => ({
   terminalLabel: '',
   location: '',
   terminalIP: '',
+  deviceRole: 'GATE_ENTRY',
+  deviceModel: 'X990',
+  communicationProtocol: 'adms_push',
+  simulated: false,
 });
 
 const formatDateTime = (value) => {
@@ -149,6 +153,10 @@ export default function Terminals() {
       terminalLabel: terminal.terminalLabel || '',
       location: terminal.location || '',
       terminalIP: terminal.terminalIP || '',
+      deviceRole: terminal.deviceRole || 'GATE_TOGGLE',
+      deviceModel: terminal.deviceModel || 'X990',
+      communicationProtocol: terminal.communicationProtocol || 'adms_push',
+      simulated: Boolean(terminal.simulated),
     });
     setShowForm(true);
   };
@@ -359,6 +367,44 @@ export default function Terminals() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
                 placeholder="192.168.1.25"
               />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-600">Device role</label>
+              <select
+                value={Number(form.machineNumber) === 50 ? 'ADMIN_ENROLLMENT' : form.deviceRole}
+                disabled={Number(form.machineNumber) === 50}
+                onChange={(e) => updateForm({ deviceRole: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                {Number(form.machineNumber) === 50 && <option value="ADMIN_ENROLLMENT">Device 1 – Admin Enrollment (machine 50)</option>}
+                <option value="GATE_ENTRY">Device 2 – Gate Entry (records ENTRY)</option>
+                <option value="GATE_EXIT">Device 3 – Gate Exit (records EXIT)</option>
+                <option value="GATE_TOGGLE">Gate – alternate entry/exit (legacy)</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-600">Communication</label>
+              <select
+                value={form.communicationProtocol}
+                onChange={(e) => updateForm({ communicationProtocol: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="adms_push">ADMS push (terminal connects to server)</option>
+                <option value="zk_tcp_pull">ZK TCP pull (sidecar polls terminal, needs IP)</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-600">Device model</label>
+              <input
+                type="text"
+                value={form.deviceModel}
+                onChange={(e) => updateForm({ deviceModel: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <label className="mt-2 flex items-center gap-2 text-xs text-gray-600">
+                <input type="checkbox" checked={form.simulated} onChange={(e) => updateForm({ simulated: e.target.checked })} />
+                SIMULATED terminal (development only; needs SIMULATION_MODE on the server)
+              </label>
             </div>
             <div className="md:col-span-2 xl:col-span-3">
               <label className="mb-1 block text-sm font-medium text-gray-600">Location</label>
