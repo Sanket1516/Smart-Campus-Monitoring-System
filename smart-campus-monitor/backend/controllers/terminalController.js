@@ -3,6 +3,8 @@ const EntryLog = require('../models/EntryLog');
 const UnauthorizedLog = require('../models/UnauthorizedLog');
 const { syncAllStudentsToNewTerminal } = require('../services/fingerprintService');
 const { createAuditLog } = require('../services/auditService');
+const TerminalCommand = require('../models/TerminalCommand');
+const syncHooks = require('../services/sync/hooks');
 
 const toNumber = (value) => Number(value);
 
@@ -41,6 +43,13 @@ const buildTerminalPayload = (payload = {}, existingTerminal = null) => {
         ? toNumber(payload.maxLocalUsers)
         : existingTerminal?.maxLocalUsers,
     isEnrollmentStation,
+    deviceRole: isEnrollmentStation
+      ? 'ADMIN_ENROLLMENT'
+      : payload.deviceRole || existingTerminal?.deviceRole || 'GATE_TOGGLE',
+    deviceModel: (payload.deviceModel || existingTerminal?.deviceModel || 'X990').trim(),
+    communicationProtocol: payload.communicationProtocol || existingTerminal?.communicationProtocol || 'adms_push',
+    simulated:
+      payload.simulated !== undefined ? Boolean(payload.simulated) : Boolean(existingTerminal?.simulated),
   };
 };
 
@@ -147,15 +156,20 @@ exports.createTerminal = async (req, res) => {
       ipAddress: req.ip,
     });
 
-    if (!terminal.isEnrollmentStation && terminal.terminalIP) {
-      syncAllStudentsToNewTerminal(terminal).catch((error) => {
-        console.error('Initial terminal sync failed:', error.message);
-      });
+    if (syncHooks.legacyDirectSync()) {
+      if (!terminal.isEnrollmentStation && terminal.terminalIP) {
+        syncAllStudentsToNewTerminal(terminal).catch((error) => {
+          console.error('Initial terminal sync failed:', error.message);
+        });
+      }
+    } else if (!terminal.isEnrollmentStation) {
+      // Queue every eligible student for this terminal (push, or sidecar bulk load).
+      syncHooks.onTerminalCreated(terminal.toObject(), req.admin);
     }
 
     res.status(201).json(await formatTerminalForResponse(terminal));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(error.statusCode || (error.code === 11000 ? 409 : 500)).json({ message: error.message });
   }
 };
 
@@ -184,7 +198,7 @@ exports.updateTerminal = async (req, res) => {
 
     res.json(await formatTerminalForResponse(terminal));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(error.statusCode || (error.code === 11000 ? 409 : 500)).json({ message: error.message });
   }
 };
 
@@ -198,6 +212,11 @@ exports.deleteTerminal = async (req, res) => {
     if (!terminal) {
       return res.status(404).json({ message: 'Terminal not found' });
     }
+
+    await TerminalCommand.updateMany(
+      { terminalSN: terminal.deviceSN, open: true },
+      { $set: { status: 'cancelled', open: false, lastError: 'terminal deleted' } }
+    );
 
     await createAuditLog({
       admin: req.admin,

@@ -1,81 +1,56 @@
 const mongoose = require('mongoose');
 
-const TEMPLATE_FLAGS = [0, 1, 3]; // 0 invalid, 1 valid, 3 duress
-const SOURCE_FORMATS = ['adms_base64', 'zk_tcp_raw', 'legacy_migration'];
-
+/**
+ * Encrypted fingerprint template (AES-256-GCM, key from TEMPLATE_ENC_KEY).
+ *
+ * `data*` fields hold the template string exactly as the source terminal uploaded it
+ * (base64 text), encrypted. They are select:false and stripped from every JSON/object
+ * serialisation. Never return this model's data from an API.
+ */
 const biometricTemplateSchema = new mongoose.Schema(
   {
-    student: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Student',
-      required: [true, 'Student is required'],
-    },
-    fingerIndex: {
-      type: Number,
-      required: [true, 'Finger index is required'],
-      min: 0,
-      max: 9,
-    },
-    flag: {
-      type: Number,
-      enum: TEMPLATE_FLAGS,
-      default: 1,
-    },
-    // The Size value exactly as the source terminal reported it (unit UNVERIFIED).
-    sizeReported: {
-      type: Number,
-      default: null,
-    },
-    byteLength: {
-      type: Number,
-      required: true,
-      min: 1,
-    },
-    sha256: {
+    student: { type: mongoose.Schema.Types.ObjectId, ref: 'Student', required: true, index: true },
+    pin: { type: String, required: true, trim: true },
+    fingerIndex: { type: Number, required: true, min: 0, max: 9 },
+    // 0 invalid, 1 valid, 3 duress
+    flag: { type: Number, enum: [0, 1, 3], default: 1 },
+    // The Size= value the terminal reported (unit UNVERIFIED: bytes or base64 chars).
+    sizeReported: { type: Number, default: null },
+    sizeBytes: { type: Number, required: true },
+    sizeBase64: { type: Number, required: true },
+    // SHA-256 of the decoded template bytes.
+    sha256: { type: String, required: true, index: true },
+    encoding: { type: String, enum: ['base64'], default: 'base64' },
+    dataIv: { type: Buffer, required: true, select: false },
+    dataTag: { type: Buffer, required: true, select: false },
+    dataEncrypted: { type: Buffer, required: true, select: false },
+    keyId: { type: String, required: true },
+    sourceTerminal: { type: String, default: '' },
+    sourceChannel: {
       type: String,
-      required: true,
-      match: /^[0-9a-f]{64}$/,
+      enum: ['push', 'sidecar', 'migration', 'manual'],
+      default: 'push',
     },
-    // AES-256-GCM. Never selected by default and stripped from every serialisation.
-    dataEncrypted: {
-      type: {
-        iv: Buffer,
-        tag: Buffer,
-        ct: Buffer,
-      },
-      required: true,
-      select: false,
-    },
-    sourceFormat: {
-      type: String,
-      enum: SOURCE_FORMATS,
-      required: true,
-    },
-    sourceTerminal: {
-      type: String,
-      trim: true,
-      default: '',
-    },
-    algorithmVersion: {
-      type: String,
-      trim: true,
-      default: '',
-    },
+    // Dialect/format the template came in (classic FINGERTMP or v3 biodata).
+    sourceDialect: { type: String, enum: ['classic', 'v3', 'zk_tcp', 'unknown'], default: 'unknown' },
+    algorithmVersion: { type: String, default: '' },
+    // 1 = ciphertext bound to "studentId:fingerIndex" via AES-GCM AAD.
+    aadVersion: { type: Number, default: 1 },
+    // Captured on a simulated terminal (SIMULATION_MODE). Never sent to real terminals.
+    simulated: { type: Boolean, default: false },
   },
   { timestamps: true, versionKey: false }
 );
 
-const stripSecret = (_doc, ret) => {
+biometricTemplateSchema.index({ student: 1, fingerIndex: 1 }, { unique: true });
+
+const strip = (_doc, ret) => {
+  delete ret.dataIv;
+  delete ret.dataTag;
   delete ret.dataEncrypted;
   return ret;
 };
-
-biometricTemplateSchema.set('toJSON', { transform: stripSecret });
-biometricTemplateSchema.set('toObject', { transform: stripSecret });
-
-biometricTemplateSchema.index({ student: 1, fingerIndex: 1 }, { unique: true });
-
-biometricTemplateSchema.statics.TEMPLATE_FLAGS = TEMPLATE_FLAGS;
-biometricTemplateSchema.statics.SOURCE_FORMATS = SOURCE_FORMATS;
+biometricTemplateSchema.set('toJSON', { transform: strip });
+biometricTemplateSchema.set('toObject', { transform: strip });
 
 module.exports = mongoose.model('BiometricTemplate', biometricTemplateSchema);

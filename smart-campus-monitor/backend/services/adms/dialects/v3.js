@@ -1,76 +1,97 @@
-// Newer "v3" push dialect (user and biodata tables). UNVERIFIED: only one open-source
-// project documents these strings (ecosoft-frappe/thai_zkt), with no tested device listed.
-// The separator, field order, No/Index meaning and Majorver/Minorver are configurable
-// and must be confirmed on hardware before use.
+/**
+ * Newer "v3" push dialect (user / biodata tables).
+ *
+ * UNVERIFIED: only "DATA UPDATE biodata ... Type=1 ... Tmp=.." is confirmed by the report.
+ * Field names and the user-table syntax follow the open-source push references and
+ * must be checked against captured X990 traffic. Table names and version fields are
+ * configurable (ADMS_V3_*).
+ */
 const {
+  assertPin,
+  assertFingerIndex,
+  assertFlag,
+  assertTemplate,
   clean,
-  cleanBase64,
-  cleanFingerIndex,
-  cleanName,
-  cleanPin,
   joinFields,
-} = require('./shared');
+  optionalField,
+} = require('./common');
 
-const separatorOf = (config) => (config.adms.v3FieldSeparator === 'space' ? ' ' : '\t');
+const createV3Dialect = (options = {}) => {
+  const {
+    emptyFieldMode = 'omit',
+    userTable = 'user',
+    biodataTable = 'biodata',
+    majorVer = '',
+    minorVer = '',
+  } = options;
 
-const createUser = (user, config) => {
-  const pairs = [
-    ['CardNo', clean(user.card)],
-    ['Pin', cleanPin(user.pin)],
-    ['Password', clean(user.password)],
-    ['Group', clean(user.group)],
-    ['StartTime', '0'],
-    ['EndTime', '0'],
-    ['Name', cleanName(user.name, config.adms.maxNameLength)],
-    ['Privilege', clean(user.privilege ?? 0)],
-  ];
+  return {
+    name: 'v3',
 
-  const fields =
-    config.adms.emptyFieldPolicy === 'omit'
-      ? pairs.filter(([key, value]) => key === 'Pin' || value !== '')
-      : pairs;
+    createUser({ pin, name, privilege = 0, password = '', card = '', group = 1 }) {
+      return `DATA UPDATE ${userTable} ${joinFields([
+        ['CardNo', optionalField(card, emptyFieldMode)],
+        ['Pin', assertPin(pin)],
+        ['Password', optionalField(password, emptyFieldMode)],
+        ['Group', Number(group) || 1],
+        ['StartTime', 0],
+        ['EndTime', 0],
+        ['Name', clean(name, 24)],
+        ['Privilege', Number(privilege) || 0],
+      ])}`;
+    },
 
-  return `DATA UPDATE user ${joinFields(fields, separatorOf(config))}`;
+    writeTemplate({ pin, fingerIndex, flag = 1, template }) {
+      const normalizedFlag = assertFlag(flag);
+      return `DATA UPDATE ${biodataTable} ${joinFields([
+        ['Pin', assertPin(pin)],
+        ['No', assertFingerIndex(fingerIndex)],
+        ['Index', 0],
+        ['Valid', normalizedFlag === 0 ? 0 : 1],
+        ['Duress', normalizedFlag === 3 ? 1 : 0],
+        ['Type', 1],
+        ['MajorVer', majorVer || undefined],
+        ['MinorVer', minorVer || undefined],
+        ['Format', 0],
+        ['Tmp', assertTemplate(template)],
+      ])}`;
+    },
+
+    deleteUser({ pin }) {
+      return `DATA DELETE ${userTable} Pin=${assertPin(pin)}`;
+    },
+
+    queryUser({ pin }) {
+      return `DATA QUERY ${userTable} Pin=${assertPin(pin)}`;
+    },
+
+    queryTemplate({ pin, fingerIndex }) {
+      const fields = [['Pin', assertPin(pin)], ['Type', 1]];
+      if (fingerIndex !== undefined && fingerIndex !== null) {
+        fields.push(['No', assertFingerIndex(fingerIndex)]);
+      }
+      return `DATA QUERY ${biodataTable} ${joinFields(fields)}`;
+    },
+
+    queryAllUsers() {
+      return `DATA QUERY ${userTable}`;
+    },
+
+    enrollFingerprint({ pin, fingerIndex, retry = 3, overwrite = 1 }) {
+      return `ENROLL_BIO ${joinFields([
+        ['TYPE', 1],
+        ['PIN', assertPin(pin)],
+        ['CardNo', ''],
+        ['FID', assertFingerIndex(fingerIndex)],
+        ['RETRY', Number(retry)],
+        ['OVERWRITE', Number(overwrite)],
+      ])}`;
+    },
+
+    probe({ pin }) {
+      return this.queryUser({ pin });
+    },
+  };
 };
 
-const writeTemplate = ({ pin, fingerIndex, flag, templateBase64 }, config) => {
-  const templateFlag = Number(flag ?? 1);
-
-  return `DATA UPDATE biodata ${joinFields(
-    [
-      ['Pin', cleanPin(pin)],
-      // UNVERIFIED: No = finger index, Index = sub-template index.
-      ['No', cleanFingerIndex(fingerIndex)],
-      ['Index', 0],
-      ['Valid', templateFlag === 0 ? 0 : 1],
-      ['Duress', templateFlag === 3 ? 1 : 0],
-      // Type=1 is fingerprint in the v3 biodata table.
-      ['Type', 1],
-      ['Majorver', clean(config.adms.v3BiodataMajorVer)],
-      ['Minorver', clean(config.adms.v3BiodataMinorVer)],
-      ['Format', 0],
-      ['Tmp', cleanBase64(templateBase64)],
-    ],
-    separatorOf(config)
-  )}`;
-};
-
-const deleteUser = ({ pin }) => `DATA DELETE user Pin=${cleanPin(pin)}`;
-
-const queryUser = ({ pin }) => `DATA QUERY tablename=user,fielddesc=*,filter=Pin=${cleanPin(pin)}`;
-
-// UNVERIFIED: whether the filter can combine Pin and finger number; Pin only is used.
-const queryTemplate = ({ pin }) =>
-  `DATA QUERY tablename=biodata,fielddesc=*,filter=Pin=${cleanPin(pin)}`;
-
-const probe = ({ pin }) => queryUser({ pin });
-
-module.exports = {
-  name: 'v3',
-  createUser,
-  writeTemplate,
-  deleteUser,
-  queryUser,
-  queryTemplate,
-  probe,
-};
+module.exports = { createV3Dialect };

@@ -17,6 +17,7 @@ export const ROUTE_PERMISSIONS = {
   '/admin/access-control': [ROLES.ADMIN],
   '/admin/warden-portal': [ROLES.ADMIN, ROLES.WARDEN],
   '/admin/terminals': [ROLES.ADMIN],
+  '/admin/terminal-sync': [ROLES.ADMIN],
   '/admin/settings': [ROLES.ADMIN],
 };
 

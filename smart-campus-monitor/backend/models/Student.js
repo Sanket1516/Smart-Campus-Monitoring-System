@@ -74,28 +74,9 @@ const studentSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    // Legacy single-template field. scripts/migrate-templates.js moves it to BiometricTemplate.
     fingerprintTemplate: {
       type: String,
       select: false,
-      default: null,
-    },
-    // none: no user record yet; awaiting: user record queued, no template stored; enrolled: template stored.
-    fingerprintStatus: {
-      type: String,
-      enum: ['none', 'awaiting', 'enrolled'],
-      default: 'none',
-    },
-    // Terminal groups this student is provisioned to (matched against TerminalConfig.groups).
-    targetTerminalGroups: {
-      type: [String],
-      default: [],
-      set: (values) =>
-        [...new Set((values || []).map((value) => String(value).trim().toLowerCase()).filter(Boolean))],
-    },
-    consentRef: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'ConsentRecord',
       default: null,
     },
     studentType: {
@@ -167,6 +148,79 @@ const studentSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // ── Terminal sync ───────────────────────────────────────────────────
+    // zktUserID is the single PIN used for this student on every terminal.
+    fingerprintStatus: {
+      type: String,
+      enum: ['none', 'awaiting', 'enrolled'],
+      default: 'none',
+      index: true,
+    },
+    targetTerminalGroups: {
+      type: [String],
+      default: [],
+      set: (values) =>
+        Array.from(new Set((values || []).map((v) => String(v).trim().toLowerCase()).filter(Boolean))),
+    },
+    consentRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'BiometricConsent',
+      default: null,
+    },
+    enrollmentMethod: {
+      type: String,
+      enum: ['menu', 'pyzk_remote', 'push_remote', ''],
+      default: '',
+    },
+    enrollmentStartedAt: { type: Date, default: null },
+    // Enrolment session on the ADMIN_ENROLLMENT terminal.
+    enrollmentState: {
+      type: String,
+      enum: ['idle', 'waiting_capture', 'captured', 'failed', 'timeout'],
+      default: 'idle',
+    },
+    enrollmentError: { type: String, default: '' },
+    enrollmentTerminalSN: { type: String, default: '' },
+    // Terminal that captured the stored template (normally Device 1).
+    enrollmentDeviceSN: { type: String, default: '' },
+    enrollmentSimulated: { type: Boolean, default: false },
+    // Overall gate synchronisation, recomputed from command acks and read-back verification.
+    syncStatus: {
+      type: String,
+      enum: [
+        'NOT_ENROLLED',
+        'PENDING',
+        'PARTIALLY_SYNCHRONIZED',
+        'SYNCHRONIZED_UNVERIFIED',
+        'FULLY_SYNCHRONIZED',
+        'FAILED',
+        'BLOCK_PENDING',
+        'BLOCKED_REMOVED',
+        'NO_TARGET_TERMINALS',
+      ],
+      default: 'NOT_ENROLLED',
+      index: true,
+    },
+    gateSync: {
+      type: [
+        {
+          _id: false,
+          terminalSN: String,
+          terminalLabel: String,
+          deviceRole: String,
+          status: {
+            type: String,
+            enum: ['pending', 'stored', 'verified', 'failed', 'removed', 'remove_pending', 'user_only'],
+          },
+          detail: String,
+          updatedAt: Date,
+        },
+      ],
+      default: [],
+    },
+    syncStatusUpdatedAt: { type: Date, default: null },
+    biometricErasedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
@@ -175,8 +229,15 @@ studentSchema.index({ zktUserID: 1 }, { unique: true, sparse: true });
 studentSchema.index({ hostel: 1 });
 studentSchema.index({ studentType: 1 });
 studentSchema.index({ accessStatus: 1 });
-studentSchema.index({ fingerprintStatus: 1 });
 studentSchema.index({ targetTerminalGroups: 1 });
+
+// Legacy template field must never leave the server, even if selected explicitly.
+const stripBiometrics = (_doc, ret) => {
+  delete ret.fingerprintTemplate;
+  return ret;
+};
+studentSchema.set('toJSON', { transform: stripBiometrics });
+studentSchema.set('toObject', { transform: stripBiometrics });
 
 studentSchema.pre('validate', function (next) {
   const allowedDepartments = getDepartmentOptions(this.course);

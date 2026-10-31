@@ -128,3 +128,31 @@ export const getPublicLiveDashboardApi = () => api.get('/live');
 export const aiQueryApi = (message) => api.post('/ai-query', { message });
 
 export default api;
+
+// Terminal sync (ADMS push + sidecar)
+export const getSyncOverviewApi = () => api.get('/sync/overview');
+export const getSyncTerminalsApi = () => api.get('/sync/terminals');
+export const updateSyncTerminalApi = (sn, data) => api.patch(`/sync/terminals/${sn}`, data);
+export const resyncTerminalApi = (sn, mode = 'auto') => api.post(`/sync/terminals/${sn}/resync`, { mode });
+export const probeTerminalApi = (sn) => api.post(`/sync/terminals/${sn}/probe`);
+export const backupTerminalApi = (sn) => api.post(`/sync/terminals/${sn}/backup`);
+export const getSyncGroupsApi = () => api.get('/sync/groups');
+export const getStudentSyncApi = (id) => api.get(`/sync/students/${id}`);
+export const setStudentGroupsApi = (id, targetTerminalGroups) =>
+  api.patch(`/sync/students/${id}/groups`, { targetTerminalGroups });
+export const resyncStudentApi = (id) => api.post(`/sync/students/${id}/resync`);
+export const recordConsentApi = (id, data) => api.post(`/sync/students/${id}/consent`, data);
+export const withdrawConsentApi = (id, reason) => api.delete(`/sync/students/${id}/consent`, { data: { reason } });
+export const eraseBiometricsApi = (id, confirmSapId, reason) =>
+  api.post(`/sync/students/${id}/erase`, { confirmSapId, reason });
+export const getEnrollmentMethodsApi = () => api.get('/sync/enrollment/methods');
+export const startSyncEnrollmentApi = (id, data) => api.post(`/sync/students/${id}/enrollment/start`, data);
+export const fetchEnrollmentTemplateApi = (id) => api.post(`/sync/students/${id}/enrollment/fetch`, {});
+export const getSyncEnrollmentStatusApi = (id) => api.get(`/sync/students/${id}/enrollment`);
+export const getSyncCommandsApi = (params) => api.get('/sync/commands', { params });
+export const retrySyncCommandsApi = (data) => api.post('/sync/commands/retry', data);
+export const cancelSyncCommandApi = (id) => api.post(`/sync/commands/${id}/cancel`);
+export const getReconciliationReportsApi = (params) => api.get('/sync/reconciliation', { params });
+export const runReconciliationApi = (data) => api.post('/sync/reconciliation/run', data || {});
+export const getBiometricAuditApi = (params) => api.get('/sync/audit', { params });
+export const getSyncJobsApi = () => api.get('/sync/jobs');
