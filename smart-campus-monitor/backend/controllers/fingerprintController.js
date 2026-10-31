@@ -129,10 +129,15 @@ const resolveStudentForTerminalScan = async (terminal, userId) => {
     return populateStudentForScan(allocation.studentId);
   }
 
-  const terminalHasAllocations = await DeviceAllocation.exists({ deviceId: terminal._id });
+  // Terminal sync uses one PIN (zktUserID) per student on every terminal. Legacy
+  // per-device allocations still win when present. Set SCAN_RESOLVE_GLOBAL_PIN=false
+  // to restore the old "allocation only" behaviour on terminals with allocations.
+  if (process.env.SCAN_RESOLVE_GLOBAL_PIN === 'false') {
+    const terminalHasAllocations = await DeviceAllocation.exists({ deviceId: terminal._id });
 
-  if (terminalHasAllocations) {
-    return null;
+    if (terminalHasAllocations) {
+      return null;
+    }
   }
 
   return Student.findOne({
@@ -148,6 +153,198 @@ const resolveStudentForTerminalScan = async (terminal, userId) => {
       },
     })
     .populate('blockedBy', 'name');
+};
+
+/**
+ * Core scan decision for a registered terminal. Shared by POST /api/fingerprint/scan
+ * and ADMS ATTLOG punches (/iclock/cdata). Returns { allow, reason, student, action }.
+ * `resolveStudent` can be overridden (ADMS resolves the global PIN first).
+ */
+const processTerminalScanEvent = async ({
+  terminal,
+  userId,
+  now = new Date(),
+  deviceName = '',
+  verifyMode,
+  resolveStudent = resolveStudentForTerminalScan,
+}) => {
+  if (terminal.isEnrollmentStation) {
+    await markTerminalSeen(terminal, now, deviceName);
+    return { allow: false, reason: 'enrollment_station' };
+  }
+
+  if (terminal.enabled === false) {
+    await markTerminalSeen(terminal, now, deviceName);
+    return { allow: false, reason: 'terminal_disabled' };
+  }
+
+  const terminalPayload = buildTerminalPayload(terminal, { deviceName });
+  const student = await resolveStudent(terminal, userId);
+
+  if (!student) {
+    const today = formatISTDate(now);
+
+    await markTerminalSeen(terminal, now, deviceName);
+
+    await UnauthorizedLog.create({
+      scannedValue: String(userId),
+      date: today,
+      timestamp: now,
+      ...terminalPayload,
+    });
+
+    const attemptNumber = await UnauthorizedLog.countDocuments({
+      machineNumber: terminal.machineNumber,
+      date: today,
+    });
+
+    await AlertLog.create({
+      type: 'unauthorized',
+      message: `Unauthorized fingerprint attempt at ${terminal.terminalLabel}`,
+      metadata: {
+        ...terminalPayload,
+        time: now.toISOString(),
+        attemptNumber,
+        verifyMode,
+      },
+    });
+
+    emitScanUnauthorized({
+      gateName: terminal.gateName,
+      terminalNumber: terminal.terminalNumber,
+      terminalLabel: terminal.terminalLabel,
+      machineNumber: terminal.machineNumber,
+      deviceSN: terminal.deviceSN,
+      time: now.toISOString(),
+      attemptNumber,
+    });
+
+    return { allow: false, reason: 'unknown_user' };
+  }
+
+  if (student.accessStatus === 'blocked') {
+    await markTerminalSeen(terminal, now, deviceName);
+
+    await AccessControlLog.create({
+      student: student._id,
+      action: 'blocked',
+      reason: student.blockReason || 'Blocked student attempted fingerprint access',
+      performedBy: student.blockedBy?._id || null,
+      timestamp: now,
+    });
+
+    await AlertLog.create({
+      type: 'blocked',
+      message: `${student.name} attempted access while blocked at ${terminal.terminalLabel}`,
+      metadata: {
+        ...terminalPayload,
+        studentId: student._id,
+        studentName: student.name,
+        sapId: student.sapId,
+        blockReason: student.blockReason,
+        time: now.toISOString(),
+      },
+    });
+
+    emitScanBlocked({
+      studentName: student.name,
+      sapId: student.sapId,
+      studentType: student.studentType,
+      hostelName: student.hostel?.name || '',
+      gateName: terminal.gateName,
+      gateNumber: terminal.gateNumber,
+      terminalNumber: terminal.terminalNumber,
+      terminalLabel: terminal.terminalLabel,
+      machineNumber: terminal.machineNumber,
+      deviceSN: terminal.deviceSN,
+      time: now.toISOString(),
+      blockReason: student.blockReason || 'Access blocked',
+    });
+
+    return { allow: false, reason: 'blocked', student };
+  }
+
+  let activeRequest = null;
+
+  if (isStudentHosteller(student) && student.wardenApprovalRequired) {
+    activeRequest = await HostellerRequest.findOne({
+      student: student._id,
+      status: 'approved',
+      accessValidUntil: { $gt: now },
+    }).populate('warden', 'name');
+
+    if (!activeRequest) {
+      await markTerminalSeen(terminal, now, deviceName);
+
+      emitWardenRequired({
+        studentName: student.name,
+        sapId: student.sapId,
+        hostelName: student.hostel?.name || '',
+        wardenName: student.hostel?.warden?.name || '',
+        gateName: terminal.gateName,
+        gateNumber: terminal.gateNumber,
+        terminalNumber: terminal.terminalNumber,
+        terminalLabel: terminal.terminalLabel,
+        machineNumber: terminal.machineNumber,
+        deviceSN: terminal.deviceSN,
+        time: now.toISOString(),
+      });
+
+      return { allow: false, reason: 'warden_approval_required', student };
+    }
+  }
+
+  const wasOffline = !terminal.isOnline;
+  const { action } = await processEntryExit(student, terminal, now);
+  terminal.isOnline = true;
+  terminal.lastSeen = now;
+  terminal.deviceName = deviceName || terminal.deviceName;
+  terminal.scansToday += 1;
+  terminal.totalScans += 1;
+  await terminal.save();
+
+  if (wasOffline) {
+    emitTerminalOnline(buildTerminalPayload(terminal));
+  }
+
+  if (activeRequest) {
+    if (action === 'exit') {
+      activeRequest.usedForExit = true;
+    }
+
+    if (action === 'entry') {
+      activeRequest.usedForEntry = true;
+
+      if (activeRequest.usedForExit) {
+        activeRequest.status = 'completed';
+      }
+    }
+
+    await activeRequest.save();
+  }
+
+  notifyParent(student, action, now).catch((error) => {
+    console.error('Fingerprint notification error:', error.message);
+  });
+
+  emitScanLive({
+    studentName: student.name,
+    sapId: student.sapId,
+    photo: student.photoUrl || '',
+    studentType: student.studentType,
+    hostelName: student.hostel?.name || '',
+    gateName: terminal.gateName,
+    gateNumber: terminal.gateNumber,
+    terminalNumber: terminal.terminalNumber,
+    terminalLabel: terminal.terminalLabel,
+    machineNumber: terminal.machineNumber,
+    deviceSN: terminal.deviceSN,
+    type: action,
+    time: now.toISOString(),
+    department: student.department,
+  });
+
+  return { allow: true, reason: 'allowed', student, action };
 };
 
 // POST /api/fingerprint/scan
@@ -192,178 +389,8 @@ exports.processFingerprintScan = async (req, res) => {
       return res.json({ allow: false });
     }
 
-    if (terminal.isEnrollmentStation) {
-      await markTerminalSeen(terminal, now, deviceName);
-      return res.json({ allow: false });
-    }
-
-    const terminalPayload = buildTerminalPayload(terminal, { deviceName });
-    const student = await resolveStudentForTerminalScan(terminal, userId);
-
-    if (!student) {
-      const today = formatISTDate(now);
-
-      await markTerminalSeen(terminal, now, deviceName);
-
-      await UnauthorizedLog.create({
-        scannedValue: String(userId),
-        date: today,
-        timestamp: now,
-        ...terminalPayload,
-      });
-
-      const attemptNumber = await UnauthorizedLog.countDocuments({
-        machineNumber: terminal.machineNumber,
-        date: today,
-      });
-
-      await AlertLog.create({
-        type: 'unauthorized',
-        message: `Unauthorized fingerprint attempt at ${terminal.terminalLabel}`,
-        metadata: {
-          ...terminalPayload,
-          time: now.toISOString(),
-          attemptNumber,
-          verifyMode,
-        },
-      });
-
-      emitScanUnauthorized({
-        gateName: terminal.gateName,
-        terminalNumber: terminal.terminalNumber,
-        terminalLabel: terminal.terminalLabel,
-        machineNumber: terminal.machineNumber,
-        deviceSN: terminal.deviceSN,
-        time: now.toISOString(),
-        attemptNumber,
-      });
-
-      return res.json({ allow: false });
-    }
-
-    if (student.accessStatus === 'blocked') {
-      await markTerminalSeen(terminal, now, deviceName);
-
-      await AccessControlLog.create({
-        student: student._id,
-        action: 'blocked',
-        reason: student.blockReason || 'Blocked student attempted fingerprint access',
-        performedBy: student.blockedBy?._id || null,
-        timestamp: now,
-      });
-
-      await AlertLog.create({
-        type: 'blocked',
-        message: `${student.name} attempted access while blocked at ${terminal.terminalLabel}`,
-        metadata: {
-          ...terminalPayload,
-          studentId: student._id,
-          studentName: student.name,
-          sapId: student.sapId,
-          blockReason: student.blockReason,
-          time: now.toISOString(),
-        },
-      });
-
-      emitScanBlocked({
-        studentName: student.name,
-        sapId: student.sapId,
-        studentType: student.studentType,
-        hostelName: student.hostel?.name || '',
-        gateName: terminal.gateName,
-        gateNumber: terminal.gateNumber,
-        terminalNumber: terminal.terminalNumber,
-        terminalLabel: terminal.terminalLabel,
-        machineNumber: terminal.machineNumber,
-        deviceSN: terminal.deviceSN,
-        time: now.toISOString(),
-        blockReason: student.blockReason || 'Access blocked',
-      });
-
-      return res.json({ allow: false });
-    }
-
-    let activeRequest = null;
-
-    if (isStudentHosteller(student) && student.wardenApprovalRequired) {
-      activeRequest = await HostellerRequest.findOne({
-        student: student._id,
-        status: 'approved',
-        accessValidUntil: { $gt: now },
-      }).populate('warden', 'name');
-
-      if (!activeRequest) {
-        await markTerminalSeen(terminal, now, deviceName);
-
-        emitWardenRequired({
-          studentName: student.name,
-          sapId: student.sapId,
-          hostelName: student.hostel?.name || '',
-          wardenName: student.hostel?.warden?.name || '',
-          gateName: terminal.gateName,
-          gateNumber: terminal.gateNumber,
-          terminalNumber: terminal.terminalNumber,
-          terminalLabel: terminal.terminalLabel,
-          machineNumber: terminal.machineNumber,
-          deviceSN: terminal.deviceSN,
-          time: now.toISOString(),
-        });
-
-        return res.json({ allow: false });
-      }
-    }
-
-    const wasOffline = !terminal.isOnline;
-    const { action } = await processEntryExit(student, terminal, now);
-    terminal.isOnline = true;
-    terminal.lastSeen = now;
-    terminal.deviceName = deviceName || terminal.deviceName;
-    terminal.scansToday += 1;
-    terminal.totalScans += 1;
-    await terminal.save();
-
-    if (wasOffline) {
-      emitTerminalOnline(buildTerminalPayload(terminal));
-    }
-
-    if (activeRequest) {
-      if (action === 'exit') {
-        activeRequest.usedForExit = true;
-      }
-
-      if (action === 'entry') {
-        activeRequest.usedForEntry = true;
-
-        if (activeRequest.usedForExit) {
-          activeRequest.status = 'completed';
-        }
-      }
-
-      await activeRequest.save();
-    }
-
-    notifyParent(student, action, now).catch((error) => {
-      console.error('Fingerprint notification error:', error.message);
-    });
-
-    emitScanLive({
-      studentName: student.name,
-      sapId: student.sapId,
-      photo: student.photoUrl || '',
-      studentType: student.studentType,
-      hostelName: student.hostel?.name || '',
-      gateName: terminal.gateName,
-      gateNumber: terminal.gateNumber,
-      terminalNumber: terminal.terminalNumber,
-      terminalLabel: terminal.terminalLabel,
-      machineNumber: terminal.machineNumber,
-      deviceSN: terminal.deviceSN,
-      type: action,
-      time: now.toISOString(),
-      department: student.department,
-    });
-
-    return res.json({ allow: true });
+    const result = await processTerminalScanEvent({ terminal, userId, now, deviceName, verifyMode });
+    return res.json({ allow: Boolean(result.allow) });
   } catch (error) {
     console.error('Fingerprint scan failed:', error.message);
     return res.json({ allow: false });
@@ -395,3 +422,7 @@ exports.processFingerprintHeartbeat = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
+
+exports.processTerminalScanEvent = processTerminalScanEvent;
+exports.resolveStudentForTerminalScan = resolveStudentForTerminalScan;
+exports.markTerminalSeen = markTerminalSeen;

@@ -14,8 +14,13 @@ const ZK_PORT = 4370;
 const ZK_TIMEOUT = 10000;
 const ZK_INPORT = 4000;
 
-const buildKey = () =>
-  crypto.createHash('sha256').update(String(process.env.FP_SECRET || 'smart-campus-fp')).digest();
+// Legacy direct-sync path (LEGACY_ZK_DIRECT_SYNC=true). No fallback secret.
+const buildKey = () => {
+  if (!process.env.FP_SECRET) {
+    throw new Error('FP_SECRET is required to decrypt legacy fingerprint templates');
+  }
+  return crypto.createHash('sha256').update(String(process.env.FP_SECRET)).digest();
+};
 
 const decryptTemplate = (encryptedTemplate) => {
   if (!encryptedTemplate) {

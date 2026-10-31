@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 
 const ALLOWED_TERMINALS_PER_GATE = [1, 2, 3, 4];
 const TERMINAL_TYPES = ['ENROLLMENT', 'MAIN_GATE', 'HOSTEL', 'GENERAL'];
+const TERMINAL_ROLES = ['enrollment', 'gate'];
+const TERMINAL_DIALECTS = ['classic', 'v3', 'unknown'];
 
 const isValidMachineNumber = (machineNumber) => {
   if (machineNumber === 50) {
@@ -114,9 +116,65 @@ const terminalConfigSchema = new mongoose.Schema(
       ref: 'Admin',
       default: null,
     },
+
+    // ── Terminal sync (ADMS push + sidecar) ─────────────────────────────
+    // serialNumber === deviceSN and ip === terminalIP (see virtuals below).
+    groups: {
+      type: [String],
+      default: [],
+      set: (values) =>
+        Array.from(new Set((values || []).map((v) => String(v).trim().toLowerCase()).filter(Boolean))),
+    },
+    role: {
+      type: String,
+      enum: TERMINAL_ROLES,
+      default: 'gate',
+    },
+    dialect: {
+      type: String,
+      enum: TERMINAL_DIALECTS,
+      default: 'unknown',
+    },
+    dialectSource: {
+      type: String,
+      enum: ['probe', 'manual', 'config', ''],
+      default: '',
+    },
+    pushVersion: { type: String, trim: true, default: '' },
+    firmware: { type: String, trim: true, default: '' },
+    algorithmVersion: { type: String, trim: true, default: '' },
+    deviceInfoRaw: { type: String, trim: true, default: '' },
+    tlsSupported: { type: Boolean, default: null },
+    lastSyncAt: { type: Date, default: null },
+    status: {
+      type: String,
+      enum: ['online', 'offline', 'unknown'],
+      default: 'unknown',
+    },
+    enabled: { type: Boolean, default: true },
+    // Only a flag. The comm key itself lives in the sidecar's environment.
+    commKeySet: { type: Boolean, default: false },
+    // Per-terminal monotonically increasing command id for C:<id>: lines.
+    nextCmdId: { type: Number, default: 1, min: 1 },
+    attlogStamp: { type: String, default: '' },
+    operlogStamp: { type: String, default: '' },
+    lastSeenIp: { type: String, default: '' },
+    // Lease used to allow at most one sidecar pull job per terminal.
+    pullLockUntil: { type: Date, default: null },
+    pullLockOwner: { type: String, default: '' },
   },
-  { versionKey: false }
+  { versionKey: false, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
+
+terminalConfigSchema.virtual('serialNumber').get(function () {
+  return this.deviceSN;
+});
+terminalConfigSchema.virtual('ip').get(function () {
+  return this.terminalIP;
+});
+terminalConfigSchema.virtual('lastSeenAt').get(function () {
+  return this.lastSeen;
+});
 
 terminalConfigSchema.pre('validate', function (next) {
   this.isEnrollmentStation = this.machineNumber === 50;
@@ -132,6 +190,8 @@ terminalConfigSchema.pre('validate', function (next) {
     this.hostel = null;
   }
 
+  this.role = this.isEnrollmentStation ? 'enrollment' : 'gate';
+
   if (!this.terminalLabel || !this.terminalLabel.trim()) {
     this.terminalLabel = this.isEnrollmentStation
       ? this.gateName || 'Enrollment Station'
@@ -145,5 +205,9 @@ terminalConfigSchema.statics.isValidMachineNumber = isValidMachineNumber;
 terminalConfigSchema.index({ terminalType: 1 });
 terminalConfigSchema.index({ hostel: 1 });
 terminalConfigSchema.statics.TERMINAL_TYPES = TERMINAL_TYPES;
+terminalConfigSchema.statics.TERMINAL_ROLES = TERMINAL_ROLES;
+terminalConfigSchema.statics.TERMINAL_DIALECTS = TERMINAL_DIALECTS;
+terminalConfigSchema.index({ groups: 1 });
+terminalConfigSchema.index({ enabled: 1, role: 1 });
 
 module.exports = mongoose.model('TerminalConfig', terminalConfigSchema);

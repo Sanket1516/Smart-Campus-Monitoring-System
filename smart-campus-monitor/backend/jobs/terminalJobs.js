@@ -40,7 +40,7 @@ const startTerminalOfflineMonitor = () => {
           _id: { $in: offlineTerminals.map((terminal) => terminal._id) },
         },
         {
-          $set: { isOnline: false },
+          $set: { isOnline: false, status: 'offline' },
         }
       );
     } catch (error) {
