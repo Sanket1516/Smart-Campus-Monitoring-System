@@ -9,6 +9,45 @@ const MAX_FRAME_WIDTH = 1280;
 const CONFIRM_WINDOW_MS = 2500;
 const SAME_VALUE_COOLDOWN_MS = 4000;
 const HELP_AFTER_MS = 10000;
+const NATIVE_FORMATS = {
+  Code128: 'code_128',
+  Code39: 'code_39',
+  Code93: 'code_93',
+  Codabar: 'codabar',
+  ITF: 'itf',
+  EAN13: 'ean_13',
+  EAN8: 'ean_8',
+  UPCA: 'upc_a',
+  UPCE: 'upc_e',
+  QRCode: 'qr_code',
+  PDF417: 'pdf417',
+  DataMatrix: 'data_matrix',
+};
+
+const createNativeDetector = async (formats) => {
+  const Detector = window.BarcodeDetector;
+  if (typeof Detector !== 'function') return null;
+
+  try {
+    const supported = typeof Detector.getSupportedFormats === 'function'
+      ? await Detector.getSupportedFormats()
+      : null;
+    const requested = formats.map((format) => NATIVE_FORMATS[format]).filter(Boolean);
+    const nativeFormats = Array.isArray(supported)
+      ? requested.filter((format) => supported.includes(format))
+      : requested;
+    if (Array.isArray(supported) && !nativeFormats.length) return null;
+
+    try {
+      return new Detector(nativeFormats.length ? { formats: nativeFormats } : undefined);
+    } catch (_error) {
+      // Some implementations expose BarcodeDetector but don't accept a format list.
+      return new Detector();
+    }
+  } catch (_error) {
+    return null;
+  }
+};
 
 export const STAGES = {
   initializing: { label: 'Initializing camera...', tone: 'gray' },
@@ -32,7 +71,8 @@ const TONES = {
 const debugEnabled = () => new URLSearchParams(window.location.search).has('debug');
 
 /**
- * Live webcam barcode reader. Decoding happens entirely in the browser (no frames are uploaded).
+ * Live camera barcode reader. Native browser decoding is preferred when available, with ZXing WASM
+ * as a fallback. Decoding happens entirely in the browser (no frames are uploaded).
  * `onDetected({ value, format, ms, pass })` fires once per accepted ID; the parent verifies it with
  * the backend. While `locked` (verification running) frames are not decoded.
  * `statusOverride` lets the parent show downstream states (Verifying, Entry Successful, ...).
@@ -85,6 +125,8 @@ export default function BarcodeScanner({ onDetected, onValueRead = null, enabled
     let lastAccepted = { value: '', at: 0 };
     let lastInvalid = { value: '', at: 0 };
     let lastObservedValue = '';
+    let nativeDetector = null;
+    let nativeDetectorInitialized = false;
     const sessionStart = performance.now();
 
     const loop = async () => {
@@ -101,7 +143,29 @@ export default function BarcodeScanner({ onDetected, onValueRead = null, enabled
           frame.getContext('2d', { willReadFrequently: true }).drawImage(video, 0, 0, frame.width, frame.height);
 
           const t0 = performance.now();
-          const hit = await scanFrameStep(frame, tick, formats);
+          if (!nativeDetectorInitialized) {
+            nativeDetector = await createNativeDetector(formats);
+            nativeDetectorInitialized = true;
+          }
+
+          let hit = null;
+          if (nativeDetector) {
+            try {
+              const [nativeHit] = await nativeDetector.detect(frame);
+              if (nativeHit?.rawValue) {
+                hit = {
+                  text: nativeHit.rawValue,
+                  format: nativeHit.format || '',
+                  pass: 'native',
+                };
+              }
+            } catch (err) {
+              console.warn('Native barcode detector unavailable; switching to ZXing WASM:', err?.message);
+              nativeDetector = null;
+            }
+          }
+
+          if (!hit) hit = await scanFrameStep(frame, tick, formats);
           tick += 1;
           frames += 1;
           const now = performance.now();
