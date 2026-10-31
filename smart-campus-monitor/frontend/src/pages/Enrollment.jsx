@@ -347,11 +347,17 @@ export default function Enrollment() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between relative overflow-hidden keep-dark rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
-        <div className="max-w-3xl">
-          <p className="eyebrow mb-3">Identity · Enrolment & synchronisation</p>
-          <h1 className="display-md text-white">Every Student. One Centralized Identity.</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-200 md:text-base">Capture a fingerprint once on the administrator terminal. The backend stores it encrypted and synchronises it to both gate terminals.</p>
+      <SyncEnrollmentFlow initialStudentId={preselectedStudentId || ''} />
+
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 className="flex items-center gap-3 text-2xl font-bold text-gray-800">
+            <HiOutlineFingerPrint className="h-7 w-7" />
+            Fingerprint Enrollment
+          </h1>
+          <p className="text-sm text-gray-500">
+            Profile students, reserve a ZKT user ID, pull the template from machine 50, and sync it to gate terminals.
+          </p>
         </div>
         <button
           type="button"
@@ -362,9 +368,6 @@ export default function Enrollment() {
           Refresh
         </button>
       </div>
-
-      <SyncEnrollmentFlow initialStudentId={preselectedStudentId || ''} />
-
 
       {stats && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">

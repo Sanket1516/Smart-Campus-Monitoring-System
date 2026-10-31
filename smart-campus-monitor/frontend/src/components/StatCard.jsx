@@ -1,38 +1,53 @@
-/**
- * Metric tile (Sentinel style): mono label, large tabular number, accent hairline.
- * Props unchanged from the original component.
- */
-const ACCENTS = {
-  blue: { line: 'from-primary-400', text: 'text-[#a5c0ff]', glow: 'rgba(61,109,255,0.18)' },
-  green: { line: 'from-emerald-400', text: 'text-emerald-300', glow: 'rgba(16,185,129,0.16)' },
-  red: { line: 'from-red-400', text: 'text-red-300', glow: 'rgba(240,68,68,0.16)' },
-  yellow: { line: 'from-amber-400', text: 'text-amber-300', glow: 'rgba(245,158,11,0.16)' },
-  orange: { line: 'from-amber-400', text: 'text-amber-300', glow: 'rgba(245,158,11,0.16)' },
-  purple: { line: 'from-violet-400', text: 'text-violet-300', glow: 'rgba(167,139,250,0.16)' },
-  indigo: { line: 'from-cyan-400', text: 'text-cyan-200', glow: 'rgba(34,211,238,0.14)' },
-};
+export default function StatCard({
+  title,
+  value,
+  subtitle,
+  icon: Icon,
+  color = 'blue',
+  onClick,
+  active = false,
+}) {
+  const colors = {
+    blue: 'bg-blue-50 text-blue-700 border-blue-200',
+    green: 'bg-green-50 text-green-700 border-green-200',
+    red: 'bg-red-50 text-red-700 border-red-200',
+    yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+    purple: 'bg-purple-50 text-purple-700 border-purple-200',
+    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  };
 
-export default function StatCard({ title, value, subtitle, icon: Icon, color = 'blue', onClick, active = false }) {
-  const accent = ACCENTS[color] || ACCENTS.blue;
+  const iconColors = {
+    blue: 'bg-blue-100 text-blue-600',
+    green: 'bg-green-100 text-green-600',
+    red: 'bg-red-100 text-red-600',
+    yellow: 'bg-yellow-100 text-yellow-600',
+    purple: 'bg-purple-100 text-purple-600',
+    indigo: 'bg-indigo-100 text-indigo-600',
+  };
+
   const Component = onClick ? 'button' : 'div';
+
   return (
     <Component
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      aria-pressed={onClick ? active : undefined}
-      className={`group relative overflow-hidden rounded-2xl border p-5 text-left transition-all duration-300 ${
-        active ? 'border-white/25 bg-white/[0.06]' : 'border-white/[0.07] bg-ink-800/80'
-      } ${onClick ? 'cursor-pointer hover:-translate-y-0.5 hover:border-white/20' : ''}`}
-      style={{ boxShadow: active ? `0 0 0 1px rgba(255,255,255,0.06) inset, 0 20px 40px -24px ${accent.glow}` : undefined }}
+      className={`rounded-xl border p-5 text-left transition-all ${colors[color]} ${
+        onClick ? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md' : ''
+      } ${active ? 'ring-2 ring-offset-2 ring-primary-400' : ''}`}
     >
-      <span className={`absolute inset-x-5 top-0 h-px bg-gradient-to-r ${accent.line} to-transparent opacity-80`} />
-      <div className="flex items-start justify-between gap-3">
-        <p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-ink-300">{title}</p>
-        {Icon && <Icon className={`h-5 w-5 shrink-0 ${accent.text} opacity-80`} />}
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm font-medium opacity-80">{title}</p>
+          <p className="text-3xl font-bold mt-1">{value}</p>
+          {subtitle && <p className="text-sm mt-1 opacity-70">{subtitle}</p>}
+          {onClick && <p className="text-xs mt-2 opacity-70">Click to view students</p>}
+        </div>
+        {Icon && (
+          <div className={`p-3 rounded-lg ${iconColors[color]}`}>
+            <Icon className="w-6 h-6" />
+          </div>
+        )}
       </div>
-      <p className="metric mt-4 text-4xl text-white">{value}</p>
-      {subtitle && <p className={`mt-1 text-sm ${accent.text}`}>{subtitle}</p>}
-      {onClick && <p className="mt-3 text-[11px] text-ink-400 transition group-hover:text-ink-200">View students →</p>}
     </Component>
   );
 }

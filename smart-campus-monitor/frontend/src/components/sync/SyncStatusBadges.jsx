@@ -60,8 +60,7 @@ export const EnrollmentStateBadge = ({ state }) => {
   return <Badge label={label} color={color} />;
 };
 
-// Shown only when the record is explicitly flagged as simulated (never by default).
-export const SimulatedBadge = ({ show = false }) => (show === true ? <Badge label="SIMULATED" color="purple" title="Data from a simulated terminal; never sent to real devices" /> : null);
+export const SimulatedBadge = ({ show = true }) => (show ? <Badge label="SIMULATED" color="purple" title="Data from a simulated terminal; never sent to real devices" /> : null);
 
 export const ROLE_LABELS = {
   ADMIN_ENROLLMENT: 'Admin Enrollment',

@@ -397,11 +397,15 @@ export default function AccessControl() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between relative overflow-hidden keep-dark rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
-        <div className="max-w-3xl">
-          <p className="eyebrow mb-3">Security · Access control</p>
-          <h1 className="display-md text-white">Every Access Decision. Recorded and Accountable.</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-200 md:text-base">Block or unblock students, review unauthorised attempts and watch denied scans as they happen.</p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 className="flex items-center gap-3 text-2xl font-bold text-gray-800">
+            <HiOutlineShieldExclamation className="h-7 w-7" />
+            Access Control
+          </h1>
+          <p className="text-sm text-gray-500">
+            Block or unblock students, monitor unauthorized attempts, and watch blocked attempts live.
+          </p>
         </div>
 
         <div className="flex gap-3">

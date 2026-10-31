@@ -190,7 +190,7 @@ export default function ExcelUploadModal({ isOpen, onClose, onSuccess }) {
               </div>
               <div className="p-4 space-y-4">
                 {/* Summary */}
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="text-center p-3 bg-gray-50 rounded">
                     <div className="text-2xl font-bold text-gray-700">{uploadResults.totalRows}</div>
                     <div className="text-sm text-gray-500">Total Rows</div>
@@ -208,12 +208,6 @@ export default function ExcelUploadModal({ isOpen, onClose, onSuccess }) {
                       {uploadResults.failureCount}
                     </div>
                     <div className="text-sm text-red-600">Failed</div>
-                  </div>
-                  <div className="text-center p-3 bg-amber-50 rounded">
-                    <div className="text-2xl font-bold text-amber-700">
-                      {(uploadResults.errors || []).filter((e) => /duplicate/i.test(e.error || '')).length}
-                    </div>
-                    <div className="text-sm text-amber-700">Duplicates</div>
                   </div>
                 </div>
 
