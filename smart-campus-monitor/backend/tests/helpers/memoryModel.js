@@ -188,6 +188,7 @@ const createMemoryModel = (name, { defaults = {}, unique = [], timestamps = true
       enumerable: false,
       value: async () => {
         // Like Mongoose: only modified top-level paths are written.
+        if (!instance._id) instance._id = new Types.ObjectId();
         const index = store.findIndex((doc) => String(doc._id) === String(instance._id));
         const original = JSON.parse(snapshot);
         const next = index >= 0 ? clone(store[index]) : {};

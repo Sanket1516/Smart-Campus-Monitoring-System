@@ -74,17 +74,18 @@ describe('terminalSyncService', () => {
     expect(await TerminalCommand.countDocuments({ open: true })).toBe(4); // 2 gates x (user + template)
   });
 
-  it('blocking queues deletes for every enabled terminal (incl. offline) and cancels pending creates', async () => {
+  it('blocking queues deletes on every enabled GATE terminal (incl. offline), keeps the enrolment device, cancels pending creates', async () => {
     const student = await makeStudent();
     await sync.enqueueProvision(student);
     student.accessStatus = 'blocked';
     await student.save();
     const result = await sync.enqueueDelete(student, { reason: 'block' });
-    expect(result.terminals.sort()).toEqual(['ENR1', 'GATE1', 'GATE2', 'HOS1']);
+    expect(result.terminals.sort()).toEqual(['GATE1', 'GATE2', 'HOS1']);
     expect(await TerminalCommand.countDocuments({ type: 'USER_CREATE', open: true })).toBe(0);
     expect(await TerminalCommand.countDocuments({ type: 'USER_CREATE', status: 'cancelled' })).toBe(2);
     const deletes = await openCommands({ type: 'USER_DELETE' });
-    expect(deletes.map((d) => d.text)).toEqual(Array(4).fill('DATA DELETE USERINFO PIN=1'));
+    expect(deletes.map((d) => d.text)).toEqual(Array(3).fill('DATA DELETE USERINFO PIN=1'));
+    expect(deletes.find((d) => d.terminalSN === 'ENR1')).toBeUndefined();
     expect(await BiometricAuditLog.countDocuments({ action: 'block' })).toBe(1);
   });
 

@@ -17,6 +17,7 @@ const {
 } = require('../services/socketService');
 const { isHosteller } = require('../utils/studentMeta');
 const { isPastCurfew, getSystemConfiguration } = require('../services/configService');
+const { getSyncConfig } = require('../config/terminalSync');
 
 const formatISTDate = (date = new Date()) =>
   new Intl.DateTimeFormat('en-CA', {
@@ -57,7 +58,81 @@ const markTerminalSeen = async (terminal, now, deviceName) => {
   }
 };
 
+/** Attendance direction from the registered terminal role (never from request input). */
+const directionForTerminal = (terminal) => {
+  if (terminal?.deviceRole === 'GATE_ENTRY') return 'entry';
+  if (terminal?.deviceRole === 'GATE_EXIT') return 'exit';
+  return null; // GATE_TOGGLE: legacy alternate entry/exit
+};
+
+const categoryFor = (student) =>
+  student.category || (student.studentType === 'hosteller' ? 'hostellers' : 'dayscholars');
+
+/**
+ * Role-driven entry/exit. Duplicate punches (same direction within
+ * ATTENDANCE_DEDUPE_SECONDS) are reported as duplicates and not recorded again.
+ */
+const processDirectedEntryExit = async (student, terminal, now, direction) => {
+  const today = formatISTDate(now);
+  const windowMs = getSyncConfig().attendance.dedupeSeconds * 1000;
+  const last = await EntryLog.findOne({ sapId: student.sapId, date: today }).sort({ createdAt: -1 });
+
+  if (direction === 'entry') {
+    if (last && last.status === 'entered' && last.entryTime && now - new Date(last.entryTime) < windowMs) {
+      return { action: 'entry', log: last, duplicate: true };
+    }
+    const log = await EntryLog.create({
+      sapId: student.sapId,
+      studentName: student.name,
+      category: categoryFor(student),
+      date: today,
+      entryTime: now,
+      status: 'entered',
+      ...buildTerminalPayload(terminal),
+    });
+    return { action: 'entry', log };
+  }
+
+  if (last && last.status === 'exited' && last.exitTime && now - new Date(last.exitTime) < windowMs) {
+    return { action: 'exit', log: last, duplicate: true };
+  }
+
+  let lateReturn = false;
+  if (isStudentHosteller(student) && (await isPastCurfew(now, student.hostel?._id || student.hostel))) {
+    lateReturn = true;
+  }
+
+  if (last && last.status === 'entered') {
+    last.exitTime = now;
+    last.status = 'exited';
+    if (lateReturn) last.lateReturn = true;
+    Object.assign(last, buildTerminalPayload(terminal));
+    await last.save();
+    return { action: 'exit', log: last };
+  }
+
+  // Exit without a recorded entry today (e.g. entered before the system was live).
+  const log = await EntryLog.create({
+    sapId: student.sapId,
+    studentName: student.name,
+    category: categoryFor(student),
+    date: today,
+    entryTime: null,
+    exitTime: now,
+    status: 'exited',
+    lateReturn,
+    ...buildTerminalPayload(terminal),
+  });
+  return { action: 'exit', log };
+};
+
 const processEntryExit = async (student, terminal, now) => {
+  const direction = directionForTerminal(terminal);
+  if (direction) return processDirectedEntryExit(student, terminal, now, direction);
+  return processToggleEntryExit(student, terminal, now);
+};
+
+const processToggleEntryExit = async (student, terminal, now) => {
   const today = formatISTDate(now);
   let log = await EntryLog.findOne({ sapId: student.sapId, date: today }).sort({ createdAt: -1 });
   let action;
@@ -264,6 +339,12 @@ const processTerminalScanEvent = async ({
     return { allow: false, reason: 'blocked', student };
   }
 
+  // Permanently de-enrolled: deny in software until the terminal processed the delete.
+  if (student.biometricErasedAt && student.fingerprintStatus !== 'enrolled') {
+    await markTerminalSeen(terminal, now, deviceName);
+    return { allow: false, reason: 'de_enrolled', student };
+  }
+
   let activeRequest = null;
 
   if (isStudentHosteller(student) && student.wardenApprovalRequired) {
@@ -295,7 +376,12 @@ const processTerminalScanEvent = async ({
   }
 
   const wasOffline = !terminal.isOnline;
-  const { action } = await processEntryExit(student, terminal, now);
+  const { action, duplicate } = await processEntryExit(student, terminal, now);
+
+  if (duplicate) {
+    await markTerminalSeen(terminal, now, deviceName);
+    return { allow: true, reason: 'duplicate', student, action, duplicate: true };
+  }
   terminal.isOnline = true;
   terminal.lastSeen = now;
   terminal.deviceName = deviceName || terminal.deviceName;
@@ -426,3 +512,4 @@ exports.processFingerprintHeartbeat = async (req, res) => {
 exports.processTerminalScanEvent = processTerminalScanEvent;
 exports.resolveStudentForTerminalScan = resolveStudentForTerminalScan;
 exports.markTerminalSeen = markTerminalSeen;
+exports.directionForTerminal = directionForTerminal;

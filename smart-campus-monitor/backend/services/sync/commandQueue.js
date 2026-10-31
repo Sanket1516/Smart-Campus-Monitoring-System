@@ -17,6 +17,7 @@ const { getDialect, resolveDialectName } = require('../adms/dialects');
 const { describeReturnCode } = require('../adms/protocol');
 const { loadTemplateValue } = require('./templateStore');
 const { emitSyncCommand, emitSyncAlert } = require('../socketService');
+const { recordTemplateState, scheduleRecompute } = require('./syncStatus');
 
 const PRIORITY = {
   PROBE: 0,
@@ -257,7 +258,11 @@ const upsertUserState = async ({ terminalSN, pin, student, present, fingerIndex,
   const update = {
     $set: { present, lastConfirmedAt: new Date(), source, ...(student ? { student } : {}) },
   };
-  if (!present) update.$set.fingers = [];
+  if (!present) {
+    update.$set.fingers = [];
+    update.$set.templates = [];
+    update.$set.absenceVerifiedAt = null;
+  }
   else if (fingerIndex !== undefined && fingerIndex !== null) update.$addToSet = { fingers: fingerIndex };
   await TerminalUserState.updateOne({ terminalSN, pin: String(pin) }, update, { upsert: true });
 };
@@ -301,21 +306,33 @@ const applyAck = async ({ terminalSN, id, returnCode, now = new Date() }) => {
     if (command.type === 'USER_CREATE') {
       await upsertUserState({ terminalSN, pin: command.pin, student: command.student, present: true, source: 'ack' });
     } else if (command.type === 'TEMPLATE_WRITE') {
-      await upsertUserState({
+      // Ack = the terminal says it stored the template. Verified only after read-back,
+      // unless SYNC_ACK_COUNTS_AS_VERIFIED is set (pilot decision, documented).
+      const ackIsProof = getSyncConfig().verification.ackCountsAsVerified;
+      await recordTemplateState({
         terminalSN,
         pin: command.pin,
         student: command.student,
-        present: true,
         fingerIndex: command.params?.fingerIndex,
-        source: 'ack',
+        sha256: command.params?.sha256,
+        state: ackIsProof ? 'verified' : 'stored',
+        via: ackIsProof ? 'ack_policy' : 'ack',
       });
+      if (!ackIsProof) {
+        const { scheduleTemplateReadback } = require('./verification');
+        await scheduleTemplateReadback(command);
+      }
     } else if (command.type === 'USER_DELETE') {
       await upsertUserState({ terminalSN, pin: command.pin, student: command.student, present: false, source: 'ack' });
+      const { scheduleDeleteReadback } = require('./verification');
+      await scheduleDeleteReadback(command);
     }
     await TerminalConfig.updateOne({ deviceSN: terminalSN }, { $set: { lastSyncAt: now } });
   } else {
     await raiseCommandAlert(command, command.lastError);
   }
+
+  if (command.student) scheduleRecompute(command.student);
 
   emitSyncCommand(commandSummary(command));
   return { command, success: ok };
@@ -342,6 +359,7 @@ const sweepTimeouts = async (now = new Date()) => {
       );
       if (result.modifiedCount) {
         failed += 1;
+        if (command.student) scheduleRecompute(command.student);
         command.status = 'failed';
         command.lastError = `no ack after ${command.attempts} attempts`;
         await raiseCommandAlert(command, command.lastError);
@@ -399,4 +417,5 @@ module.exports = {
   countsByTerminal,
   upsertUserState,
   commandSummary,
+  raiseCommandAlert,
 };

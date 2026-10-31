@@ -56,6 +56,9 @@ const createHttpSidecar = ({ url, secret, timeoutMs = 60000, fetchImpl = globalT
     enroll: (ip, { userId, fingerIndex }) =>
       request('POST', `${ipPath(ip)}/enroll`, { user_id: String(userId), fid: Number(fingerIndex) }),
     backup: (ip) => request('POST', `${ipPath(ip)}/backup`),
+    capabilities: () => request('GET', '/capabilities'),
+    getAttendance: (ip, { since } = {}) =>
+      request('GET', `${ipPath(ip)}/attendance${since ? `?since=${encodeURIComponent(since)}` : ''}`),
   };
 };
 

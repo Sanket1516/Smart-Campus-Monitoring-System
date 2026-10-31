@@ -31,9 +31,10 @@ const {
   isGateTerminal,
 } = require('./groups');
 const { emitSyncStudent, emitSyncTerminal } = require('../socketService');
+const { scheduleRecompute, recomputeStudentSyncStatus } = require('./syncStatus');
 
 const TERMINAL_FIELDS =
-  'deviceSN terminalIP terminalLabel gateName machineNumber terminalType hostel isEnrollmentStation role groups enabled dialect isOnline lastSeen status';
+  'deviceSN terminalIP terminalLabel gateName machineNumber terminalType hostel isEnrollmentStation role deviceRole groups enabled dialect isOnline lastSeen status simulated communicationProtocol';
 
 const loadTerminals = () => TerminalConfig.find({ enabled: { $ne: false } }).select(TERMINAL_FIELDS).lean();
 
@@ -43,7 +44,7 @@ const loadStudent = async (studentOrId) => {
 };
 
 const templateMetaFor = (studentId) =>
-  BiometricTemplate.find({ student: studentId, flag: { $ne: 0 } }).select('fingerIndex flag sha256 pin').sort({ fingerIndex: 1 }).lean();
+  BiometricTemplate.find({ student: studentId, flag: { $ne: 0 } }).select('fingerIndex flag sha256 pin simulated').sort({ fingerIndex: 1 }).lean();
 
 const userParams = (student, pin) => ({ pin, name: student.name || `USER ${pin}`, privilege: 0, group: 1 });
 
@@ -66,6 +67,8 @@ const queueStudentOnTerminals = async (student, pin, terminals, { includeTemplat
     if (created.created) queued += 1;
     if (excludeTemplateTerminals.includes(terminal.deviceSN)) continue;
     for (const template of templates) {
+      // A SIMULATED template must never reach a real terminal.
+      if (template.simulated && !terminal.simulated) continue;
       const result = await enqueueCommand({
         terminal,
         type: 'TEMPLATE_WRITE',
@@ -132,6 +135,7 @@ const enqueueProvision = async (studentInput, options = {}) => {
     details: { reason, pin, terminals: targets.map((t) => t.deviceSN), queued, templates, pruned },
   });
   emitSyncStudent({ studentId: String(student._id), pin, reason, queued, terminals: targets.length });
+  await recomputeStudentSyncStatus(student._id);
   return { pin, terminals: targets.map((t) => t.deviceSN), queued, templates, pruned };
 };
 
@@ -143,17 +147,20 @@ const knownHolders = async (student, terminals) => {
     .lean();
   const desired = desiredTerminalsForStudent({ ...student.toObject?.() ?? student, accessStatus: 'allowed' }, terminals);
   const set = new Set([...states, ...commands, ...desired].map((row) => row.terminalSN || row.deviceSN));
-  return terminals.filter((t) => set.has(t.deviceSN) || t.isEnrollmentStation || t.role === 'enrollment');
+  return terminals.filter((t) => set.has(t.deviceSN));
 };
 
 const enqueueDelete = async (studentInput, options = {}) => {
-  const { actor = 'system', reason = 'block', terminals: explicitTerminals = null, jobId = '' } = options;
+  // Block keeps the template on the ADMIN_ENROLLMENT terminal; only permanent
+  // de-enrolment (includeEnrollment=true) deletes it there as well.
+  const { actor = 'system', reason = 'block', terminals: explicitTerminals = null, jobId = '', includeEnrollment = false } = options;
   const student = await loadStudent(studentInput);
   if (!student) return { skipped: true, reason: 'student not found' };
   if (!student.zktUserID) return { skipped: true, reason: 'student has no PIN (never provisioned)', queued: 0 };
   const pin = String(student.zktUserID);
 
-  const all = explicitTerminals || (await loadTerminals());
+  const loaded = explicitTerminals || (await loadTerminals());
+  const all = explicitTerminals ? loaded : loaded.filter((t) => includeEnrollment || isGateTerminal(t));
   const { queue } = getSyncConfig();
   const targets = explicitTerminals ? all : queue.deleteScope === 'all' ? all : await knownHolders(student, all);
 
@@ -178,6 +185,7 @@ const enqueueDelete = async (studentInput, options = {}) => {
     details: { reason, pin, terminals: targets.length, queued, cancelled },
   });
   emitSyncStudent({ studentId: String(student._id), pin, reason, queued, terminals: targets.length });
+  await recomputeStudentSyncStatus(student._id);
   return { pin, terminals: targets.map((t) => t.deviceSN), queued, cancelled };
 };
 
@@ -260,16 +268,29 @@ const enqueueForNewTerminal = async (terminalInput, options = {}) => {
  * Called after a template is stored (enrolment). Marks the student enrolled and fans
  * the template out to their target terminals.
  */
-const onTemplateStored = async (studentInput, { sourceTerminal = '', actor = 'system' } = {}) => {
+const onTemplateStored = async (studentInput, { sourceTerminal = '', actor = 'system', simulated = false } = {}) => {
   const student = await loadStudent(studentInput);
   if (!student) return { skipped: true };
   const now = new Date();
   await Student.updateOne(
     { _id: student._id },
-    { $set: { fingerprintStatus: 'enrolled', fingerprintEnrolled: true, fingerprintEnrolledAt: now } }
+    {
+      $set: {
+        fingerprintStatus: 'enrolled',
+        fingerprintEnrolled: true,
+        fingerprintEnrolledAt: now,
+        enrollmentState: 'captured',
+        enrollmentError: '',
+        enrollmentDeviceSN: sourceTerminal,
+        enrollmentSimulated: Boolean(simulated),
+      },
+    }
   );
   emitSyncStudent({ studentId: String(student._id), event: 'enrolled', sourceTerminal });
-  if (!isStudentEligible(student)) return { skipped: true, reason: 'student blocked or inactive; template stored only' };
+  if (!isStudentEligible(student)) {
+    await recomputeStudentSyncStatus(student._id);
+    return { skipped: true, reason: 'student blocked or inactive; template stored only' };
+  }
   return enqueueProvision(student, { actor, reason: 'enrolment_fanout' });
 };
 
@@ -280,7 +301,7 @@ const onTemplateStored = async (studentInput, { sourceTerminal = '', actor = 'sy
 const deEnrolAndErase = async (studentInput, { actor = 'system', reason = 'erasure' } = {}) => {
   const student = await loadStudent(studentInput);
   if (!student) return { skipped: true, reason: 'student not found' };
-  const deletion = await enqueueDelete(student, { actor, reason });
+  const deletion = await enqueueDelete(student, { actor, reason, includeEnrollment: true });
   const erased = await deleteTemplatesForStudent(student, actor);
   await Student.updateOne(
     { _id: student._id },
@@ -290,6 +311,10 @@ const deEnrolAndErase = async (studentInput, { actor = 'system', reason = 'erasu
         fingerprintEnrolled: false,
         fingerprintEnrolledAt: null,
         biometricErasedAt: new Date(),
+        enrollmentState: 'idle',
+        enrollmentDeviceSN: '',
+        enrollmentSimulated: false,
+        syncStatus: 'NOT_ENROLLED',
       },
       $unset: { fingerprintTemplate: 1 },
     }

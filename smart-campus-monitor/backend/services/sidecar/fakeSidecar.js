@@ -19,6 +19,7 @@ const createFakeSidecar = ({ terminals = {} } = {}) => {
         algorithm: seed.algorithm || '10',
         offline: Boolean(seed.offline),
         users: new Map(), // user_id -> {uid, user_id, name, privilege}
+        attendance: [], // {user_id, timestamp, status, punch}
         templates: new Map(), // `${user_id}:${fid}` -> {fid, valid, template}
       });
     }
@@ -104,6 +105,16 @@ const createFakeSidecar = ({ terminals = {} } = {}) => {
       calls.push(['enroll', ip, userId, fingerIndex]);
       device(ip);
       return { ok: false, detail: 'fake sidecar cannot capture fingers' };
+    },
+    addPunch(ip, record) {
+      device(ip).attendance.push(record);
+    },
+    async capabilities() {
+      return { operations: {}, forbidden: ['clear_data'], simulated: true };
+    },
+    async getAttendance(ip, { since } = {}) {
+      calls.push(['getAttendance', ip, since]);
+      return { records: device(ip).attendance.filter((r) => !since || r.timestamp > since) };
     },
     async backup(ip) {
       calls.push(['backup', ip]);

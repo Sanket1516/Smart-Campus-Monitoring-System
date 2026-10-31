@@ -22,6 +22,10 @@ const attendancePunchSchema = new mongoose.Schema(
       default: 'recorded_only',
     },
     decision: { type: mongoose.Schema.Types.Mixed, default: null },
+    // Direction comes from the terminal's deviceRole (GATE_ENTRY / GATE_EXIT), not from the punch.
+    direction: { type: String, enum: ['entry', 'exit', 'toggle', ''], default: '' },
+    source: { type: String, enum: ['adms_push', 'zk_tcp_pull'], default: 'adms_push' },
+    simulated: { type: Boolean, default: false },
   },
   { versionKey: false }
 );

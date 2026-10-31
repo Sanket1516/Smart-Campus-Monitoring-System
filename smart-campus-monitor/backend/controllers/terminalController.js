@@ -43,6 +43,13 @@ const buildTerminalPayload = (payload = {}, existingTerminal = null) => {
         ? toNumber(payload.maxLocalUsers)
         : existingTerminal?.maxLocalUsers,
     isEnrollmentStation,
+    deviceRole: isEnrollmentStation
+      ? 'ADMIN_ENROLLMENT'
+      : payload.deviceRole || existingTerminal?.deviceRole || 'GATE_TOGGLE',
+    deviceModel: (payload.deviceModel || existingTerminal?.deviceModel || 'X990').trim(),
+    communicationProtocol: payload.communicationProtocol || existingTerminal?.communicationProtocol || 'adms_push',
+    simulated:
+      payload.simulated !== undefined ? Boolean(payload.simulated) : Boolean(existingTerminal?.simulated),
   };
 };
 
@@ -162,7 +169,7 @@ exports.createTerminal = async (req, res) => {
 
     res.status(201).json(await formatTerminalForResponse(terminal));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(error.statusCode || (error.code === 11000 ? 409 : 500)).json({ message: error.message });
   }
 };
 
@@ -191,7 +198,7 @@ exports.updateTerminal = async (req, res) => {
 
     res.json(await formatTerminalForResponse(terminal));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(error.statusCode || (error.code === 11000 ? 409 : 500)).json({ message: error.message });
   }
 };
 

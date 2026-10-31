@@ -108,3 +108,11 @@ def _get_time(self):
 
 
 FakeZK.get_time = _get_time
+
+
+def _get_attendance(self):
+    self._call("get_attendance")
+    return list(getattr(self.device, "attendance", []))
+
+
+FakeZK.get_attendance = _get_attendance

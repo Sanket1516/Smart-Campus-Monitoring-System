@@ -26,6 +26,11 @@ class FakeTerminal {
     this.templates = new Map(); // `${pin}:${fid}` -> {template, valid}
     this.executed = [];
     this.options = null;
+    // Failure injection for tests: commands matching failPattern answer failCode.
+    this.failPattern = null;
+    this.failCode = -2;
+    // Some firmwares may not answer template queries (UNVERIFIED); simulate that.
+    this.answerTemplateQueries = true;
   }
 
   async request(method, path, body) {
@@ -85,6 +90,7 @@ class FakeTerminal {
   }
 
   async execute(command) {
+    if (this.failPattern && this.failPattern.test(command)) return this.failCode;
     const classic = this.dialect === 'classic';
     const match = /^DATA (UPDATE|DELETE|QUERY) (\S+)(?: (.*))?$/.exec(command);
     if (!match) return -1;
@@ -130,6 +136,7 @@ class FakeTerminal {
       return 0;
     }
     if (verb === 'QUERY' && (table === 'FINGERTMP' || table === 'biodata')) {
+      if (!this.answerTemplateQueries) return -1;
       await this.uploadTemplatesFor(pin);
       return 0;
     }

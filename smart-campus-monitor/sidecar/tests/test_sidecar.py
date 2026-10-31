@@ -186,3 +186,23 @@ def test_bulk_load_resumes_and_verifies(devices, tmp_path):
     report = bulk_load.verify_target(pool, "10.10.0.22", plan)
     assert report["users_missing"] == [] and report["templates_missing"] == [] and report["templates_hash_mismatch"] == []
     assert "clear_data" not in target.calls and "clear_data" not in source.calls
+
+
+def test_capabilities_and_attendance_pull(client, devices):
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    caps = client.get("/capabilities", headers=H).json()
+    assert caps["operations"]["get_attendance"] == {"implemented": True, "enabled": True, "verified_on_x990": False}
+    assert caps["operations"]["enroll_user"]["enabled"] is False
+    assert "clear_data" in caps["forbidden"]
+    devices[IP].attendance = [
+        SimpleNamespace(user_id="1001", timestamp=datetime(2026, 11, 2, 8, 0, 0), status=0, punch=0),
+        SimpleNamespace(user_id="1002", timestamp=datetime(2026, 11, 2, 9, 30, 0), status=1, punch=1),
+    ]
+    all_records = client.get(f"/terminals/{IP}/attendance", headers=H).json()["records"]
+    assert [r["user_id"] for r in all_records] == ["1001", "1002"]
+    newer = client.get(f"/terminals/{IP}/attendance", headers=H, params={"since": "2026-11-02 08:00:00"}).json()["records"]
+    assert newer == [{"user_id": "1002", "timestamp": "2026-11-02 09:30:00", "status": 1, "punch": 1}]
+    assert client.get(f"/terminals/{IP}/attendance", headers=H, params={"since": "bad"}).status_code == 422
+    assert "disable_device" not in devices[IP].calls

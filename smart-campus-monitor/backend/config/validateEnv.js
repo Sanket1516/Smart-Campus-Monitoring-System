@@ -25,6 +25,10 @@ const validateEnv = (env = process.env) => {
     }
   }
 
+  if (env.NODE_ENV === 'production' && (env.SIMULATION_MODE === 'true' || env.SIDECAR_FAKE === 'true')) {
+    errors.push('SIMULATION_MODE / SIDECAR_FAKE must not be enabled in production');
+  }
+
   if (env.LEGACY_ZK_DIRECT_SYNC === 'true' && !env.FP_SECRET) {
     errors.push('FP_SECRET is required when LEGACY_ZK_DIRECT_SYNC=true');
   }

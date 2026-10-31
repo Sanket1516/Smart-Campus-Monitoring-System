@@ -40,6 +40,10 @@ router.patch(
     body('dialect').optional().isIn(['classic', 'v3', 'unknown']),
     body('commKeySet').optional().isBoolean(),
     body('tlsSupported').optional({ nullable: true }).isBoolean(),
+    body('deviceRole').optional().isIn(['ADMIN_ENROLLMENT', 'GATE_ENTRY', 'GATE_EXIT', 'GATE_TOGGLE']),
+    body('communicationProtocol').optional().isIn(['adms_push', 'zk_tcp_pull']),
+    body('deviceModel').optional().trim().isLength({ max: 40 }),
+    body('simulated').optional().isBoolean(),
     handleValidation,
   ],
   c.updateTerminal
