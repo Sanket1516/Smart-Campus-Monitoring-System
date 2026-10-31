@@ -117,7 +117,7 @@ The base Compose Nginx service remains HTTP-only on port `80`. For mobile live-c
 
 ### Using the phone camera for barcode scanning
 
-On the phone, open the scanner page over HTTPS, sign in, tap **Start camera** once, and allow camera access. The scanner requests the rear camera, continuously decodes frames in the browser with ZXing WebAssembly, and sends each accepted SAP ID through the existing scan API. While the backend verifies a scan, frame decoding pauses briefly; the camera stream stays open and scanning resumes automatically for the next student. No camera frames or photos are uploaded. See [MDN's getUserMedia requirements](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia#privacy_and_security).
+On the phone, open the scanner page over HTTPS, sign in, tap **Start camera** once, and allow camera access. The scanner requests the rear camera and continuously decodes frames in the browser, preferring the native browser barcode detector when available and falling back to ZXing WebAssembly. Each accepted SAP ID goes through the existing scan API. While the backend verifies a scan, frame decoding pauses briefly; the camera stream stays open and scanning resumes automatically for the next student. No camera frames or photos are uploaded. See [MDN's getUserMedia requirements](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia#privacy_and_security).
 
 If needed, the collapsed **Optional photo fallback** remains below the live scanner, but it is not required for normal gate scanning.
 
