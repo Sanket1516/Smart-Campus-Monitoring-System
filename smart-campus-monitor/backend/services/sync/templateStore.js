@@ -9,6 +9,8 @@ const { getSyncConfig } = require('../../config/terminalSync');
 
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 
+const aadFor = (studentId, fingerIndex) => `${String(studentId)}:${Number(fingerIndex)}`;
+
 const withoutData = (doc) => {
   if (!doc) return doc;
   const { dataIv, dataTag, dataEncrypted, ...meta } = doc;
@@ -48,8 +50,32 @@ const storeTemplate = async ({
   dialect = 'unknown',
   algorithmVersion = '',
   actor = 'system',
+  simulated = false,
 }) => {
   const described = describeTemplate(template);
+  const studentId = student._id || student;
+
+  // Exact duplicate of another student's template = refuse (likely a wrong PIN on the device).
+  // Note: this only detects identical bytes; detecting the same finger enrolled twice needs the
+  // device's own duplicate check (UNVERIFIED on X990, see HARDWARE_VERIFICATION.md).
+  const duplicate = await BiometricTemplate.findOne({ sha256: described.sha256, student: { $ne: studentId } })
+    .select('student fingerIndex')
+    .lean();
+  if (duplicate) {
+    await recordBiometricAudit({
+      actor,
+      action: 'template_store',
+      student,
+      terminal: sourceTerminal,
+      result: 'rejected_duplicate',
+      details: { fingerIndex, sha256: described.sha256, duplicateOf: String(duplicate.student) },
+    });
+    const error = new Error('This fingerprint template is already stored for another student');
+    error.code = 'DUPLICATE_TEMPLATE';
+    error.statusCode = 409;
+    error.duplicateOf = String(duplicate.student);
+    throw error;
+  }
   const sizeMatch = classifySizeReported(sizeReported, described);
   const { templateSizeMode } = getSyncConfig().adms;
 
@@ -60,8 +86,8 @@ const storeTemplate = async ({
     );
   }
 
-  const existing = await BiometricTemplate.findOne({ student: student._id || student, fingerIndex }).lean();
-  if (existing && existing.sha256 === described.sha256 && existing.flag === Number(flag)) {
+  const existing = await BiometricTemplate.findOne({ student: studentId, fingerIndex }).lean();
+  if (existing && existing.sha256 === described.sha256 && existing.flag === Number(flag) && Boolean(existing.simulated) === Boolean(simulated)) {
     await recordBiometricAudit({
       actor,
       action: 'template_store',
@@ -73,9 +99,9 @@ const storeTemplate = async ({
     return { template: withoutData(existing), changed: false, sizeMatch };
   }
 
-  const encrypted = encryptTemplate(Buffer.from(described.value, 'utf8'));
+  const encrypted = encryptTemplate(Buffer.from(described.value, 'utf8'), undefined, aadFor(studentId, fingerIndex));
   const doc = await BiometricTemplate.findOneAndUpdate(
-    { student: student._id || student, fingerIndex },
+    { student: studentId, fingerIndex },
     {
       $set: {
         pin: String(pin),
@@ -93,6 +119,8 @@ const storeTemplate = async ({
         sourceChannel: channel,
         sourceDialect: dialect,
         algorithmVersion,
+        aadVersion: 1,
+        simulated: Boolean(simulated),
       },
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
@@ -113,6 +141,7 @@ const storeTemplate = async ({
       sizeMatch,
       channel,
       dialect,
+      simulated: Boolean(simulated),
     },
   });
 
@@ -125,7 +154,8 @@ const loadTemplateValue = async (templateId) => {
     .select('+dataIv +dataTag +dataEncrypted')
     .lean();
   if (!doc) return null;
-  const plain = decryptTemplate({ iv: doc.dataIv, tag: doc.dataTag, ciphertext: doc.dataEncrypted });
+  const aad = doc.aadVersion === 1 ? aadFor(doc.student, doc.fingerIndex) : null;
+  const plain = decryptTemplate({ iv: doc.dataIv, tag: doc.dataTag, ciphertext: doc.dataEncrypted }, undefined, aad);
   const value = plain.toString('utf8');
   const check = sha256Hex(Buffer.from(value, 'base64'));
   if (check !== doc.sha256) {
@@ -139,6 +169,7 @@ const loadTemplateValue = async (templateId) => {
     sizeBytes: doc.sizeBytes,
     sizeBase64: doc.sizeBase64,
     pin: doc.pin,
+    simulated: Boolean(doc.simulated),
   };
 };
 
@@ -158,6 +189,7 @@ const deleteTemplatesForStudent = async (student, actor = 'system') => {
 };
 
 module.exports = {
+  aadFor,
   describeTemplate,
   classifySizeReported,
   storeTemplate,

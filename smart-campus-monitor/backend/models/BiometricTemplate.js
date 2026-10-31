@@ -34,6 +34,10 @@ const biometricTemplateSchema = new mongoose.Schema(
     // Dialect/format the template came in (classic FINGERTMP or v3 biodata).
     sourceDialect: { type: String, enum: ['classic', 'v3', 'zk_tcp', 'unknown'], default: 'unknown' },
     algorithmVersion: { type: String, default: '' },
+    // 1 = ciphertext bound to "studentId:fingerIndex" via AES-GCM AAD.
+    aadVersion: { type: Number, default: 1 },
+    // Captured on a simulated terminal (SIMULATION_MODE). Never sent to real terminals.
+    simulated: { type: Boolean, default: false },
   },
   { timestamps: true, versionKey: false }
 );

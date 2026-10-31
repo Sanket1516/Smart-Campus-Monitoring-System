@@ -53,6 +53,10 @@ const findRegisteredTerminal = async (sn, ip) => {
     return { error: 'unknown terminal' };
   }
   if (terminal.enabled === false) return { error: 'terminal disabled' };
+  if (terminal.simulated && !getSyncConfig().simulationMode) {
+    log(`refused SIMULATED terminal ${serial}: SIMULATION_MODE is off`);
+    return { error: 'simulated terminal refused' };
+  }
   return { terminal };
 };
 
@@ -115,13 +119,26 @@ const handleHandshake = async (terminal, query, ip) => {
 
 /** Resolve a student from a PIN (global PIN first, legacy allocation via the scan pipeline). */
 const findStudentByPin = (pin) =>
-  Student.findOne({ zktUserID: Number(pin) }).select('_id name zktUserID accessStatus isActive consentRef fingerprintStatus');
+  Student.findOne({ zktUserID: Number(pin) }).select('_id name zktUserID accessStatus isActive consentRef fingerprintStatus enrollmentState');
+
+const directionLabel = (terminal) =>
+  terminal.deviceRole === 'GATE_ENTRY' ? 'entry' : terminal.deviceRole === 'GATE_EXIT' ? 'exit' : terminal.deviceRole === 'GATE_TOGGLE' ? 'toggle' : '';
 
 const handleAttlog = async (terminal, body) => {
-  const { adms } = getSyncConfig();
   const { records, errors } = protocol.parseAttlog(body);
+  const results = await ingestPunches(terminal, records, { source: 'adms_push' });
+  results.malformed = errors.length;
+  return results;
+};
+
+/**
+ * Store punches (push ATTLOG or sidecar pull) and run real-time ones through the
+ * existing scan/decision pipeline. De-duplicated by (terminal, PIN, device time, status).
+ */
+const ingestPunches = async (terminal, records, { source = 'adms_push' } = {}) => {
+  const { adms } = getSyncConfig();
   const serverReceivedAt = new Date();
-  const results = { received: records.length, inserted: 0, duplicates: 0, decided: 0, recordedOnly: 0, malformed: errors.length };
+  const results = { received: records.length, inserted: 0, duplicates: 0, decided: 0, recordedOnly: 0, malformed: 0 };
   const { processTerminalScanEvent } = require('../../controllers/fingerprintController');
 
   let maintenance = false;
@@ -145,6 +162,9 @@ const handleAttlog = async (terminal, body) => {
         verify: record.verify,
         workcode: record.workcode,
         extra: record.extra,
+        direction: directionLabel(terminal),
+        source,
+        simulated: Boolean(terminal.simulated),
       });
       results.inserted += 1;
       pilotLog({
@@ -192,7 +212,13 @@ const handleAttlog = async (terminal, body) => {
           $set: {
             processed: 'decision',
             student: decision.student?._id || null,
-            decision: { allow: Boolean(decision.allow), reason: decision.reason, action: decision.action || null },
+            decision: {
+              allow: Boolean(decision.allow),
+              reason: decision.reason,
+              action: decision.action || null,
+              duplicate: Boolean(decision.duplicate),
+              simulated: Boolean(terminal.simulated),
+            },
           },
         }
       );
@@ -226,8 +252,9 @@ const handleBlockedOnTerminal = async (terminal, student, pin) => {
 const handleOperations = async (terminal, table, body) => {
   const parsed = protocol.parseOperationLines(body, table);
   const results = { users: parsed.users.length, templates: parsed.templates.length, stored: 0, ignored: 0, operations: parsed.operations.length };
-  const acceptFrom = process.env.ACCEPT_TEMPLATES_FROM === 'any' ? 'any' : 'enrollment';
-  const isEnrollment = terminal.isEnrollmentStation || terminal.role === 'enrollment';
+  // New templates are accepted ONLY from the ADMIN_ENROLLMENT terminal (Device 1).
+  // Templates uploaded by gate terminals are read-back evidence for verification.
+  const isEnrollment = terminal.deviceRole === 'ADMIN_ENROLLMENT' || terminal.isEnrollmentStation || terminal.role === 'enrollment';
   const { enrollment } = getSyncConfig();
 
   for (const user of parsed.users) {
@@ -253,8 +280,25 @@ const handleOperations = async (terminal, table, body) => {
       fingerIndex: tpl.fingerIndex,
       source: 'audit',
     });
-    if (acceptFrom === 'enrollment' && !isEnrollment) {
-      results.ignored += 1;
+    if (!isEnrollment) {
+      const { compareReadback } = require('../sync/verification');
+      const { describeTemplate } = require('../sync/templateStore');
+      let readbackSha;
+      try {
+        readbackSha = describeTemplate(tpl.template).sha256;
+      } catch (_error) {
+        results.ignored += 1;
+        continue;
+      }
+      const outcome = await compareReadback({
+        terminalSN: terminal.deviceSN,
+        pin: tpl.pin,
+        student: student._id,
+        fingerIndex: tpl.fingerIndex,
+        readbackSha,
+        via: 'push_readback',
+      });
+      results.verified = (results.verified || 0) + (outcome === 'verified' ? 1 : 0);
       continue;
     }
     if (enrollment.requireConsent && !(await hasActiveConsent(student))) {
@@ -282,6 +326,7 @@ const handleOperations = async (terminal, table, body) => {
         dialect: tpl.dialect,
         algorithmVersion: terminal.algorithmVersion || '',
         actor: `terminal:${terminal.deviceSN}`,
+        simulated: Boolean(terminal.simulated),
       });
       pilotLog({
         step: 'template_upload',
@@ -299,11 +344,19 @@ const handleOperations = async (terminal, table, body) => {
       if (stored.changed) {
         results.stored += 1;
         const { onTemplateStored } = require('../sync/terminalSyncService');
-        await onTemplateStored(student, { sourceTerminal: terminal.deviceSN, actor: `terminal:${terminal.deviceSN}` });
+        await onTemplateStored(student, {
+          sourceTerminal: terminal.deviceSN,
+          actor: `terminal:${terminal.deviceSN}`,
+          simulated: Boolean(terminal.simulated),
+        });
       }
     } catch (error) {
       results.ignored += 1;
       log(`template store failed for PIN ${tpl.pin}: ${error.message}`);
+      if (error.code === 'DUPLICATE_TEMPLATE') {
+        await Student.updateOne({ _id: student._id }, { $set: { enrollmentState: 'failed', enrollmentError: error.message } });
+        emitSyncAlert({ message: `Enrolment of PIN ${tpl.pin} rejected: ${error.message}`, terminalSN: terminal.deviceSN });
+      }
     }
   }
   if (parsed.unknown.length) log(`unparsed ${table} lines from ${terminal.deviceSN}: ${parsed.unknown.length}`);
@@ -414,6 +467,12 @@ const handleDeviceCmd = async (terminal, body, ip) => {
       out.push({ id: ack.id, probe: await handleProbeResult(terminal, result.command, ack.returnCode) });
       continue;
     }
+    if (result.command?.type === 'ENROLL_FP' && !result.success && result.command.student) {
+      await Student.updateOne(
+        { _id: result.command.student },
+        { $set: { enrollmentState: 'failed', enrollmentError: `Device rejected remote enrolment (${result.command.lastError})` } }
+      );
+    }
     out.push({ id: ack.id, success: result.success });
   }
   log(`devicecmd SN=${terminal.deviceSN} ${JSON.stringify(out)}`);
@@ -421,6 +480,7 @@ const handleDeviceCmd = async (terminal, body, ip) => {
 };
 
 module.exports = {
+  ingestPunches,
   findRegisteredTerminal,
   handleHandshake,
   handleCdataPost,

@@ -47,6 +47,26 @@ const oneOf = (name, allowed, fallback) => {
 };
 
 const load = () => ({
+  // Development without hardware. Data from simulated terminals is labelled SIMULATED and is
+  // never sent to real terminals. Refused at startup when NODE_ENV=production.
+  simulationMode: parseBoolEnv('SIMULATION_MODE', false),
+  attendance: {
+    // Same student, same direction, within this window = duplicate punch (ignored).
+    dedupeSeconds: parseIntEnv('ATTENDANCE_DEDUPE_SECONDS', 60),
+  },
+  verification: {
+    // FULLY_SYNCHRONIZED needs a read-back (SHA-256 match) from every gate. Set true only if the
+    // pilot proves read-back is impossible and an ack (Return=0) is accepted as proof.
+    ackCountsAsVerified: parseBoolEnv('SYNC_ACK_COUNTS_AS_VERIFIED', false),
+    // Queue a push template query after each template write (UNVERIFIED that the X990 answers).
+    pushReadback: parseBoolEnv('SYNC_PUSH_READBACK', true),
+    // Use the sidecar (ZK TCP) for read-back when the terminal has an IP and a sidecar exists.
+    sidecarReadback: parseBoolEnv('SYNC_SIDECAR_READBACK', true),
+  },
+  pull: {
+    // Terminals with communicationProtocol=zk_tcp_pull: queue execution + attendance polling.
+    pollSeconds: parseIntEnv('PULL_POLL_SECONDS', 30),
+  },
   adms: {
     // Mount /iclock on its own listener (recommended: bind to the terminal VLAN interface only).
     port: parseIntEnv('ADMS_PORT', 0),
@@ -106,6 +126,7 @@ const load = () => ({
     pushRemoteEnabled: parseBoolEnv('ENROLL_PUSH_REMOTE_ENABLED', false),
     pyzkRemoteEnabled: parseBoolEnv('ENROLL_PYZK_REMOTE_ENABLED', false),
     requireConsent: parseBoolEnv('ENROLL_REQUIRE_CONSENT', true),
+    timeoutMinutes: parseIntEnv('ENROLL_TIMEOUT_MIN', 10),
     defaultFingerIndex: parseIntEnv('ENROLL_DEFAULT_FINGER', 0),
   },
   sidecar: {

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hmac
 import logging
+import os
+import re
 import time
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -109,6 +111,47 @@ def create_app(settings: Settings | None = None, zk_factory=default_zk_factory) 
     @app.get("/health")
     async def health():
         return {"ok": True}
+
+    @app.get("/capabilities", dependencies=[Depends(require_secret)])
+    async def capabilities():
+        # What THIS sidecar implements. "verified_on_x990" stays false until the pilot proves it;
+        # set SIDECAR_VERIFIED_OPS (comma separated) after the pilot.
+        verified = {op.strip() for op in os.environ.get("SIDECAR_VERIFIED_OPS", "").split(",") if op.strip()}
+        ops = ["info", "get_users", "get_templates", "set_user", "save_user_template", "delete_user",
+               "get_attendance", "backup", "enroll_user"]
+        return {
+            "operations": {
+                op: {
+                    "implemented": True,
+                    "enabled": op != "enroll_user" or settings.enroll_enabled,
+                    "verified_on_x990": op in verified,
+                }
+                for op in ops
+            },
+            "forbidden": ["clear_data", "clear_attendance", "poweroff", "restart"],
+        }
+
+    @app.get("/terminals/{ip}/attendance", dependencies=[Depends(require_secret)])
+    async def attendance(ip: str, since: str | None = None):
+        if since and not re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", since):
+            raise HTTPException(status_code=422, detail="since must be 'YYYY-MM-DD HH:MM:SS' (device local time)")
+
+        def fn(conn):
+            records = []
+            for att in conn.get_attendance() or []:
+                stamp = att.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                if since and stamp <= since:
+                    continue
+                records.append({
+                    "user_id": str(att.user_id),
+                    "timestamp": stamp,
+                    "status": int(getattr(att, "status", 0) or 0),
+                    "punch": int(getattr(att, "punch", 0) or 0),
+                })
+            return {"records": records}
+
+        # Reading the log does not need the device disabled.
+        return await run(ip, fn, disable=False, action="get_attendance")
 
     @app.get("/terminals/{ip}/info", dependencies=[Depends(require_secret)])
     async def info(ip: str):

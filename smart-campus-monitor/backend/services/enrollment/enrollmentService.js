@@ -20,14 +20,37 @@ const { getSidecar } = require('../sidecar');
 
 const httpError = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 
+/** The ADMIN_ENROLLMENT terminal (Device 1). Enrolment is only allowed there. */
 const resolveEnrollmentTerminal = async (terminalSN) => {
   const filter = terminalSN
     ? { deviceSN: terminalSN }
-    : { $or: [{ isEnrollmentStation: true }, { role: 'enrollment' }], enabled: { $ne: false } };
+    : { $or: [{ deviceRole: 'ADMIN_ENROLLMENT' }, { isEnrollmentStation: true }], enabled: { $ne: false } };
   const terminal = await TerminalConfig.findOne(filter).sort({ machineNumber: 1 }).lean();
-  if (!terminal) throw httpError(400, 'No enabled enrollment terminal is configured');
-  if (!isEnrollmentTerminal(terminal)) throw httpError(400, `Terminal ${terminal.deviceSN} is not an enrollment terminal`);
+  if (!terminal) throw httpError(400, 'No enabled ADMIN_ENROLLMENT terminal is registered');
+  if (!isEnrollmentTerminal(terminal)) {
+    throw httpError(400, `Terminal ${terminal.deviceSN} is not the ADMIN_ENROLLMENT terminal; enrol on Device 1 only`);
+  }
+  if (terminal.simulated && !getSyncConfig().simulationMode) {
+    throw httpError(400, `Terminal ${terminal.deviceSN} is SIMULATED and SIMULATION_MODE is off`);
+  }
   return terminal;
+};
+
+const setEnrollmentState = (studentId, state, error = '') =>
+  Student.updateOne({ _id: studentId }, { $set: { enrollmentState: state, enrollmentError: error } });
+
+/** Mark enrolment sessions that waited longer than ENROLL_TIMEOUT_MIN as timed out. */
+const expireEnrollments = async (now = new Date()) => {
+  const minutes = getSyncConfig().enrollment.timeoutMinutes;
+  const cutoff = new Date(now.getTime() - minutes * 60 * 1000);
+  const expired = await Student.find({ enrollmentState: 'waiting_capture', enrollmentStartedAt: { $lte: cutoff } })
+    .select('_id enrollmentTerminalSN')
+    .lean();
+  for (const student of expired) {
+    await setEnrollmentState(student._id, 'timeout', `No fingerprint was received within ${minutes} minutes. Retry the enrolment.`);
+    await recordBiometricAudit({ actor: 'system', action: 'enroll_start', student: student._id, terminal: student.enrollmentTerminalSN, result: 'timeout' });
+  }
+  return expired.length;
 };
 
 const methodAvailable = (method) => {
@@ -77,9 +100,12 @@ const startEnrollment = async (studentId, {
     fingerprintStatus: student.fingerprintStatus === 'enrolled' ? 'enrolled' : 'awaiting',
     enrollmentMethod: chosen,
     enrollmentStartedAt: new Date(),
+    enrollmentState: 'waiting_capture',
+    enrollmentError: '',
+    enrollmentTerminalSN: terminal.deviceSN,
   };
   if (Array.isArray(targetGroups) && targetGroups.length) update.targetTerminalGroups = normalize(targetGroups);
-  if (student.fingerprintStatus === 'enrolled') update.fingerprintStatus = 'awaiting'; // re-enrolment
+  // Re-enrolment keeps the current template (and gate access) until a new one is captured.
   await Student.updateOne({ _id: student._id }, { $set: update });
 
   const params = { pin, name: student.name, privilege: 0, group: 1 };
@@ -103,8 +129,19 @@ const startEnrollment = async (studentId, {
   if (chosen === 'pyzk_remote') {
     const sidecar = getSidecar();
     await sidecar.upsertUser(terminal.terminalIP, { user_id: pin, name: student.name.slice(0, 24), privilege: 0, templates: [] });
-    const result = await sidecar.enroll(terminal.terminalIP, { userId: pin, fingerIndex: finger });
+    let result;
+    try {
+      result = await sidecar.enroll(terminal.terminalIP, { userId: pin, fingerIndex: finger });
+    } catch (error) {
+      result = { ok: false, detail: error.message };
+    }
     steps.push({ step: 'sidecar_enroll', ok: Boolean(result?.ok), detail: result?.detail || '' });
+    if (!result?.ok) {
+      await setEnrollmentState(student._id, 'failed', `Capture failed on the device: ${result?.detail || 'enroll_user returned false'}`);
+    } else {
+      // Capture succeeded on the device; read the template back now.
+      await fetchEnrollmentTemplate(student._id, { terminalSN: terminal.deviceSN, actor });
+    }
   }
 
   await recordBiometricAudit({
@@ -115,10 +152,14 @@ const startEnrollment = async (studentId, {
     details: { method: chosen, pin, fingerIndex: finger, steps },
   });
 
+  const fresh = await Student.findById(student._id).select('enrollmentState enrollmentError').lean();
   return {
     pin,
     method: chosen,
     fingerIndex: finger,
+    enrollmentState: fresh?.enrollmentState,
+    enrollmentError: fresh?.enrollmentError || '',
+    simulated: Boolean(terminal.simulated),
     terminal: { deviceSN: terminal.deviceSN, terminalLabel: terminal.terminalLabel },
     steps,
     instructions:
@@ -160,7 +201,9 @@ const fetchEnrollmentTemplate = async (studentId, { terminalSN, actor = 'system'
   let stored = 0;
   for (const tpl of templates) {
     if (String(tpl.user_id) !== pin) continue;
-    const result = await storeTemplate({
+    let result;
+    try {
+      result = await storeTemplate({
       student,
       pin,
       fingerIndex: Number(tpl.fid),
@@ -172,20 +215,29 @@ const fetchEnrollmentTemplate = async (studentId, { terminalSN, actor = 'system'
       dialect: 'zk_tcp',
       algorithmVersion: terminal.algorithmVersion || '',
       actor,
-    });
+      simulated: Boolean(terminal.simulated),
+      });
+    } catch (error) {
+      if (error.code === 'DUPLICATE_TEMPLATE') {
+        await setEnrollmentState(student._id, 'failed', error.message);
+        throw error;
+      }
+      throw error;
+    }
     if (result.changed) stored += 1;
   }
 
-  if (templates.length) {
+  const found = templates.filter((t) => String(t.user_id) === pin).length;
+  if (found) {
     const { onTemplateStored } = require('../sync/terminalSyncService');
-    await onTemplateStored(student, { sourceTerminal: terminal.deviceSN, actor });
+    await onTemplateStored(student, { sourceTerminal: terminal.deviceSN, actor, simulated: Boolean(terminal.simulated) });
   }
-  return { mode: 'sidecar', found: templates.length, stored };
+  return { mode: 'sidecar', found, stored, simulated: Boolean(terminal.simulated) };
 };
 
 const getEnrollmentStatus = async (studentId) => {
   const student = await Student.findById(studentId)
-    .select('name sapId zktUserID fingerprintStatus enrollmentMethod enrollmentStartedAt fingerprintEnrolledAt consentRef targetTerminalGroups')
+    .select('name sapId zktUserID fingerprintStatus enrollmentMethod enrollmentStartedAt fingerprintEnrolledAt consentRef targetTerminalGroups enrollmentState enrollmentError enrollmentTerminalSN enrollmentDeviceSN enrollmentSimulated syncStatus gateSync accessStatus')
     .lean();
   if (!student) throw httpError(404, 'Student not found');
   return {
@@ -196,6 +248,8 @@ const getEnrollmentStatus = async (studentId) => {
 };
 
 module.exports = {
+  expireEnrollments,
+  setEnrollmentState,
   startEnrollment,
   fetchEnrollmentTemplate,
   getEnrollmentStatus,

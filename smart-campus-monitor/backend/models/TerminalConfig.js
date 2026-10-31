@@ -3,6 +3,11 @@ const mongoose = require('mongoose');
 const ALLOWED_TERMINALS_PER_GATE = [1, 2, 3, 4];
 const TERMINAL_TYPES = ['ENROLLMENT', 'MAIN_GATE', 'HOSTEL', 'GENERAL'];
 const TERMINAL_ROLES = ['enrollment', 'gate'];
+// ADMIN_ENROLLMENT: the only device that captures new fingerprints.
+// GATE_ENTRY / GATE_EXIT: attendance direction comes from this role.
+// GATE_TOGGLE: legacy behaviour (entry/exit alternate per day).
+const DEVICE_ROLES = ['ADMIN_ENROLLMENT', 'GATE_ENTRY', 'GATE_EXIT', 'GATE_TOGGLE'];
+const COMM_PROTOCOLS = ['adms_push', 'zk_tcp_pull'];
 const TERMINAL_DIALECTS = ['classic', 'v3', 'unknown'];
 
 const isValidMachineNumber = (machineNumber) => {
@@ -130,6 +135,17 @@ const terminalConfigSchema = new mongoose.Schema(
       enum: TERMINAL_ROLES,
       default: 'gate',
     },
+    deviceRole: {
+      type: String,
+      enum: DEVICE_ROLES,
+      default: 'GATE_TOGGLE',
+    },
+    deviceModel: { type: String, trim: true, default: 'X990' },
+    // adms_push: terminal dials out to /iclock. zk_tcp_pull: the sidecar polls it on 4370.
+    communicationProtocol: { type: String, enum: COMM_PROTOCOLS, default: 'adms_push' },
+    // Simulated terminals are accepted only with SIMULATION_MODE=true; their data is labelled SIMULATED.
+    simulated: { type: Boolean, default: false },
+    lastAttendancePullAt: { type: Date, default: null },
     dialect: {
       type: String,
       enum: TERMINAL_DIALECTS,
@@ -190,7 +206,12 @@ terminalConfigSchema.pre('validate', function (next) {
     this.hostel = null;
   }
 
-  this.role = this.isEnrollmentStation ? 'enrollment' : 'gate';
+  if (this.isEnrollmentStation) {
+    this.deviceRole = 'ADMIN_ENROLLMENT';
+  } else if (this.deviceRole === 'ADMIN_ENROLLMENT') {
+    return next(new Error('ADMIN_ENROLLMENT is reserved for the enrollment station (machine number 50)'));
+  }
+  this.role = this.deviceRole === 'ADMIN_ENROLLMENT' ? 'enrollment' : 'gate';
 
   if (!this.terminalLabel || !this.terminalLabel.trim()) {
     this.terminalLabel = this.isEnrollmentStation
@@ -201,7 +222,22 @@ terminalConfigSchema.pre('validate', function (next) {
   next();
 });
 
+// Prevent accidental duplication of single-instance roles (UNIQUE_DEVICE_ROLES).
+terminalConfigSchema.pre('save', async function (next) {
+  try {
+    // Required lazily to keep the model free of service imports at load time.
+    const { assertDeviceRoleAvailable } = require('../services/terminals/deviceRoles');
+    await assertDeviceRoleAvailable(this.constructor, { _id: this._id, deviceRole: this.deviceRole, enabled: this.enabled });
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+});
+
 terminalConfigSchema.statics.isValidMachineNumber = isValidMachineNumber;
+terminalConfigSchema.statics.DEVICE_ROLES = DEVICE_ROLES;
+terminalConfigSchema.statics.COMM_PROTOCOLS = COMM_PROTOCOLS;
+terminalConfigSchema.index({ deviceRole: 1 });
 terminalConfigSchema.index({ terminalType: 1 });
 terminalConfigSchema.index({ hostel: 1 });
 terminalConfigSchema.statics.TERMINAL_TYPES = TERMINAL_TYPES;

@@ -21,6 +21,25 @@ const enrollment = require('../services/enrollment/enrollmentService');
 const { getSidecar } = require('../services/sidecar');
 const { getSyncConfig } = require('../config/terminalSync');
 const { emitSyncTerminal } = require('../services/socketService');
+const TerminalUserState = require('../models/TerminalUserState');
+const { capabilitiesFor } = require('../services/terminals/terminalAdapters');
+const { recomputeStudentSyncStatus } = require('../services/sync/syncStatus');
+
+/** Users present and fingerprints stored/verified per terminal (from acks and read-backs). */
+const presenceCounts = async () => {
+  const rows = await TerminalUserState.aggregate([
+    { $match: { present: true } },
+    {
+      $project: {
+        terminalSN: 1,
+        stored: { $size: { $filter: { input: { $ifNull: ['$templates', []] }, cond: { $in: ['$$this.state', ['stored', 'verified']] } } } },
+        verified: { $size: { $filter: { input: { $ifNull: ['$templates', []] }, cond: { $eq: ['$$this.state', 'verified'] } } } },
+      },
+    },
+    { $group: { _id: '$terminalSN', users: { $sum: 1 }, fingerprintsStored: { $sum: '$stored' }, fingerprintsVerified: { $sum: '$verified' } } },
+  ]);
+  return Object.fromEntries(rows.map((r) => [r._id, r]));
+};
 
 const sendError = (res, error) => res.status(error.statusCode || 500).json({ message: error.message });
 
@@ -47,7 +66,7 @@ const assertStudentScope = async (req, studentId) => {
 const audit = (req, action, entity, entityId, newValue) =>
   createAuditLog({ admin: req.admin, action, entity, entityId, newValue, ipAddress: req.ip }).catch(() => null);
 
-const serializeTerminal = (terminal, counts = {}) => ({
+const serializeTerminal = (terminal, counts = {}, presence = {}) => ({
   _id: terminal._id,
   serialNumber: terminal.deviceSN,
   ip: terminal.terminalIP,
@@ -72,13 +91,22 @@ const serializeTerminal = (terminal, counts = {}) => ({
   lastSyncAt: terminal.lastSyncAt || null,
   pending: (counts.pending || 0) + (counts.sent || 0),
   failed: counts.failed || 0,
+  deviceRole: terminal.deviceRole || (terminal.isEnrollmentStation ? 'ADMIN_ENROLLMENT' : 'GATE_TOGGLE'),
+  deviceModel: terminal.deviceModel || 'X990',
+  communicationProtocol: terminal.communicationProtocol || 'adms_push',
+  simulated: Boolean(terminal.simulated),
+  location: terminal.location || '',
+  enrolledUsers: presence.users || 0,
+  fingerprintsStored: presence.fingerprintsStored || 0,
+  fingerprintsVerified: presence.fingerprintsVerified || 0,
+  capabilities: capabilitiesFor(terminal),
 });
 
 // GET /api/sync/overview
 exports.getOverview = async (req, res) => {
   try {
     const terminalFilter = await wardenTerminalFilter(req);
-    const [terminals, counts, awaiting, enrolled, lastReport, failedTotal, pendingTotal] = await Promise.all([
+    const [terminals, counts, awaiting, enrolled, lastReport, failedTotal, pendingTotal, presence, syncBreakdown] = await Promise.all([
       TerminalConfig.find(terminalFilter).lean(),
       countsByTerminal(),
       Student.countDocuments({ isActive: true, fingerprintStatus: 'awaiting' }),
@@ -86,8 +114,11 @@ exports.getOverview = async (req, res) => {
       ReconciliationReport.findOne().sort({ startedAt: -1 }).lean(),
       TerminalCommand.countDocuments({ status: 'failed' }),
       TerminalCommand.countDocuments({ status: { $in: ['pending', 'sent'] } }),
+      presenceCounts(),
+      Student.aggregate([{ $match: { isActive: true } }, { $group: { _id: '$syncStatus', count: { $sum: 1 } } }]),
     ]);
-    const rows = terminals.map((t) => serializeTerminal(t, counts[t.deviceSN]));
+    const rows = terminals.map((t) => serializeTerminal(t, counts[t.deviceSN], presence[t.deviceSN]));
+    const byRole = (role) => rows.filter((t) => t.deviceRole === role);
     res.json({
       terminals: {
         total: rows.length,
@@ -97,7 +128,18 @@ exports.getOverview = async (req, res) => {
         withFailures: rows.filter((t) => t.failed > 0).length,
       },
       commands: { pending: pendingTotal, failed: failedTotal },
-      students: { awaitingFingerprint: awaiting, enrolled },
+      students: {
+        awaitingFingerprint: awaiting,
+        enrolled,
+        bySyncStatus: Object.fromEntries((syncBreakdown || []).map((r) => [r._id || 'NOT_ENROLLED', r.count])),
+      },
+      devices: {
+        ADMIN_ENROLLMENT: byRole('ADMIN_ENROLLMENT'),
+        GATE_ENTRY: byRole('GATE_ENTRY'),
+        GATE_EXIT: byRole('GATE_EXIT'),
+        GATE_TOGGLE: byRole('GATE_TOGGLE'),
+      },
+      simulationMode: getSyncConfig().simulationMode,
       lastReconciliation: lastReport ? { runId: lastReport.runId, startedAt: lastReport.startedAt } : null,
       config: {
         reconcileSource: getSyncConfig().reconcile.source,
@@ -114,11 +156,15 @@ exports.getOverview = async (req, res) => {
 // GET /api/sync/terminals
 exports.listTerminals = async (req, res) => {
   try {
-    const [terminals, counts] = await Promise.all([
+    const [terminals, counts, presence] = await Promise.all([
       TerminalConfig.find(await wardenTerminalFilter(req)).sort({ machineNumber: 1 }).lean(),
       countsByTerminal(),
+      presenceCounts(),
     ]);
-    res.json({ terminals: terminals.map((t) => serializeTerminal(t, counts[t.deviceSN])) });
+    res.json({
+      simulationMode: getSyncConfig().simulationMode,
+      terminals: terminals.map((t) => serializeTerminal(t, counts[t.deviceSN], presence[t.deviceSN])),
+    });
   } catch (error) {
     sendError(res, error);
   }
@@ -130,7 +176,11 @@ exports.updateTerminal = async (req, res) => {
     const terminal = await TerminalConfig.findOne({ deviceSN: req.params.sn });
     if (!terminal) return res.status(404).json({ message: 'Terminal not found' });
     const before = serializeTerminal(terminal.toObject());
-    const { groups, enabled, dialect, commKeySet, tlsSupported } = req.body;
+    const { groups, enabled, dialect, commKeySet, tlsSupported, deviceRole, communicationProtocol, deviceModel, simulated } = req.body;
+    if (deviceRole !== undefined) terminal.deviceRole = deviceRole;
+    if (communicationProtocol !== undefined) terminal.communicationProtocol = communicationProtocol;
+    if (deviceModel !== undefined) terminal.deviceModel = deviceModel;
+    if (simulated !== undefined) terminal.simulated = Boolean(simulated);
     if (groups !== undefined) terminal.groups = groups;
     if (enabled !== undefined) terminal.enabled = Boolean(enabled);
     if (dialect !== undefined) {
@@ -142,12 +192,13 @@ exports.updateTerminal = async (req, res) => {
     await terminal.save();
     const after = serializeTerminal(terminal.toObject());
     await audit(req, `Updated sync settings for terminal ${terminal.deviceSN}`, 'TerminalConfig', terminal._id, {
-      before: { groups: before.groups, enabled: before.enabled, dialect: before.dialect },
-      after: { groups: after.groups, enabled: after.enabled, dialect: after.dialect },
+      before: { groups: before.groups, enabled: before.enabled, dialect: before.dialect, deviceRole: before.deviceRole, protocol: before.communicationProtocol },
+      after: { groups: after.groups, enabled: after.enabled, dialect: after.dialect, deviceRole: after.deviceRole, protocol: after.communicationProtocol },
     });
     emitSyncTerminal({ terminalSN: terminal.deviceSN, event: 'updated' });
     res.json({ terminal: after });
   } catch (error) {
+    if (/reserved for the enrollment station/.test(error.message)) error.statusCode = 400;
     sendError(res, error);
   }
 };
@@ -262,10 +313,13 @@ exports.setGroupTerminals = async (req, res) => {
 exports.getStudentSync = async (req, res) => {
   try {
     await assertStudentScope(req, req.params.id);
+    const overall = await recomputeStudentSyncStatus(req.params.id);
     const status = await sync.getStudentSyncStatus(req.params.id);
     const consent = await getActiveConsent(await Student.findById(req.params.id).select('consentRef').lean());
     res.json({
       ...status,
+      syncStatus: overall?.syncStatus,
+      gateSync: overall?.gateSync || [],
       consent: consent
         ? { recordedAt: consent.recordedAt, givenBy: consent.givenBy, isMinor: consent.isMinor, method: consent.method }
         : null,
