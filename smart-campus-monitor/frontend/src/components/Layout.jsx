@@ -16,6 +16,7 @@ import {
   HiOutlineMoon,
   HiOutlineSun,
   HiOutlineUsers,
+  HiOutlineStatusOnline,
 } from 'react-icons/hi';
 import { useEffect, useState, useMemo } from 'react';
 import AlertBell from './AlertBell';
@@ -34,6 +35,7 @@ const navItems = [
   { to: '/admin/access-control', icon: HiOutlineShieldExclamation, label: 'Access Control' },
   { to: '/admin/warden-portal', icon: HiOutlineClipboardList, label: 'Warden Portal' },
   { to: '/admin/terminals', icon: HiOutlineDesktopComputer, label: 'Terminals' },
+  { to: '/admin/terminal-sync', icon: HiOutlineStatusOnline, label: 'Terminal Sync' },
   { to: '/admin/settings', icon: HiOutlineCog, label: 'Settings' },
 ];
 

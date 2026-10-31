@@ -18,6 +18,8 @@ import {
   getHostelsApi,
 } from '../services/api';
 import ExcelUploadModal from '../components/ExcelUploadModal';
+import FingerprintStatusBadge from '../components/sync/FingerprintStatusBadge';
+import StudentSyncDrawer from '../components/sync/StudentSyncDrawer';
 
 const courseOptions = ['pharmacy', 'engineering', 'mbatech', 'pharmatech'];
 const departmentByCourse = {
@@ -390,6 +392,7 @@ export default function StudentManagement() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState(createStudentForm());
+  const [syncStudentId, setSyncStudentId] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -585,6 +588,9 @@ export default function StudentManagement() {
                     Year
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                    Fingerprint
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                     Actions
                   </th>
                 </tr>
@@ -622,6 +628,15 @@ export default function StudentManagement() {
                       Year {student.year || '-'}
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm">
+                      <FingerprintStatusBadge status={student.fingerprintStatus} />
+                    </td>
+                    <td className="flex gap-2 whitespace-nowrap px-6 py-4 text-sm">
+                      <button
+                        onClick={() => setSyncStudentId(student._id)}
+                        className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                      >
+                        Sync
+                      </button>
                       <button
                         onClick={() => handleEdit(student)}
                         className="flex items-center gap-1 rounded bg-primary-600 px-3 py-1.5 text-white transition-colors hover:bg-primary-700"
@@ -672,6 +687,10 @@ export default function StudentManagement() {
           secondaryAction={() => handleCreateStudent({ continueToEnrollment: true })}
           secondaryLabel="Create And Open Enrollment"
         />
+      )}
+
+      {syncStudentId && (
+        <StudentSyncDrawer studentId={syncStudentId} onClose={() => { setSyncStudentId(null); loadData(); }} />
       )}
 
       <ExcelUploadModal

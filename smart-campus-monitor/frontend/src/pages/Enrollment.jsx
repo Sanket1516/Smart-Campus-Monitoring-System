@@ -12,6 +12,7 @@ import {
   HiOutlineUser,
 } from 'react-icons/hi';
 import { useAuth } from '../context/AuthContext';
+import SyncEnrollmentFlow from '../components/sync/SyncEnrollmentFlow';
 import {
   confirmEnrollmentApi,
   getEnrollmentStatsApi,
@@ -346,6 +347,8 @@ export default function Enrollment() {
 
   return (
     <div className="space-y-6">
+      <SyncEnrollmentFlow initialStudentId={preselectedStudentId || ''} />
+
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="flex items-center gap-3 text-2xl font-bold text-gray-800">
