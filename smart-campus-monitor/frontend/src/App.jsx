@@ -17,6 +17,7 @@ import WardenPortal from './pages/WardenPortal';
 import StudentExitRequest from './pages/StudentExitRequest';
 import PublicLiveDashboard from './pages/PublicLiveDashboard';
 import StudentManagement from './pages/StudentManagement';
+import TerminalSync from './pages/TerminalSync';
 import { ROLES } from './utils/rolePermissions';
 
 function PrivateRoute({ children }) {
@@ -90,6 +91,11 @@ export default function App() {
           <Route path="admin/terminals" element={
             <RoleRoute path="/admin/terminals" requiredRoles={[ROLES.ADMIN]}>
               <Terminals />
+            </RoleRoute>
+          } />
+          <Route path="admin/terminal-sync" element={
+            <RoleRoute path="/admin/terminal-sync" requiredRoles={[ROLES.ADMIN]}>
+              <TerminalSync />
             </RoleRoute>
           } />
           <Route path="settings" element={<Navigate to="/admin/settings" replace />} />
