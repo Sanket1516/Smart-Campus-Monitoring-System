@@ -114,7 +114,7 @@ exports.getTerminalStatus = async (_req, res) => {
   try {
     const terminals = await TerminalConfig.find()
       .select(
-        'machineNumber deviceSN deviceName gateName gateNumber terminalNumber terminalLabel location terminalIP terminalType hostel maxLocalUsers isEnrollmentStation isOnline lastSeen scansToday totalScans addedAt'
+        'machineNumber deviceSN deviceName gateName gateNumber terminalNumber terminalLabel location terminalIP terminalType hostel maxLocalUsers isEnrollmentStation isOnline lastSeen scansToday totalScans addedAt deviceRole communicationProtocol simulated lastSyncAt firmware'
       )
       .populate('hostel', 'name code')
       .sort({ isEnrollmentStation: 1, gateNumber: 1, terminalNumber: 1, gateName: 1 })

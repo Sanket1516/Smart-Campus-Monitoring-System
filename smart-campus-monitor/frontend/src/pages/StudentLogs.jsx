@@ -23,13 +23,14 @@ export default function StudentLogs() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('entry'); // entry | visitors | unauthorized
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState(() => ({
     date: new Date().toISOString().split('T')[0],
-    sapId: '',
+    // The top-bar search links here with ?search=<SAP ID>.
+    sapId: new URLSearchParams(window.location.search).get('search') || '',
     category: '',
     status: '',
     page: 1,
-  });
+  }));
 
   useEffect(() => {
     const load = async () => {

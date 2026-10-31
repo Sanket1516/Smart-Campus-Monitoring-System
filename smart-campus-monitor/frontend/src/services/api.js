@@ -156,3 +156,4 @@ export const getReconciliationReportsApi = (params) => api.get('/sync/reconcilia
 export const runReconciliationApi = (data) => api.post('/sync/reconciliation/run', data || {});
 export const getBiometricAuditApi = (params) => api.get('/sync/audit', { params });
 export const getSyncJobsApi = () => api.get('/sync/jobs');
+export const getPublicBrandingApi = () => api.get('/live/branding');

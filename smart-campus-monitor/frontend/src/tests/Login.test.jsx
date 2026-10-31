@@ -1,27 +1,35 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
-import Login from '../pages/Login';
-import { AuthProvider } from '../context/AuthContext';
-
 import { vi } from 'vitest';
+import Login from '../pages/Login';
 
-// Mock context and dependencies
+const login = vi.fn();
 vi.mock('../context/AuthContext', () => ({
-  useAuth: () => ({ login: vi.fn() }),
-  AuthProvider: ({ children }) => <div>{children}</div>
+  useAuth: () => ({ login }),
+  AuthProvider: ({ children }) => <div>{children}</div>,
 }));
 
 describe('Login Component', () => {
-  it('renders login form correctly', () => {
+  it('renders the labelled login form', () => {
     render(
       <BrowserRouter>
         <Login />
       </BrowserRouter>
     );
-    
-    expect(screen.getByPlaceholderText(/Username/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/Password/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Sign In/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Password$/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sign in to console/i })).toBeInTheDocument();
+  });
+
+  it('validates empty fields without calling the API', () => {
+    render(
+      <BrowserRouter>
+        <Login />
+      </BrowserRouter>
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Sign in to console/i }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/username and password/i);
+    expect(login).not.toHaveBeenCalled();
   });
 });

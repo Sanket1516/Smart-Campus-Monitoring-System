@@ -99,6 +99,18 @@ const getCollegeBranding = (configs) => {
   };
 };
 
+// GET /api/live/branding — campus name and logo only (public, no student data).
+exports.getPublicBranding = async (_req, res) => {
+  try {
+    const configs = await SystemConfig.find({}).lean();
+    const branding = getCollegeBranding(configs);
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json({ collegeName: branding.collegeName, collegeLogo: branding.collegeLogo });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to load branding' });
+  }
+};
+
 exports.getPublicLiveDashboard = async (_req, res) => {
   try {
     const selectedDate = todayStr();
@@ -197,6 +209,7 @@ exports.getPublicLiveDashboard = async (_req, res) => {
         gateNumber: terminal.gateNumber,
         terminalNumber: terminal.terminalNumber,
         terminalLabel: terminal.terminalLabel,
+        deviceRole: terminal.deviceRole || (terminal.isEnrollmentStation ? 'ADMIN_ENROLLMENT' : 'GATE_TOGGLE'),
         isOnline: Boolean(terminal.isOnline),
         lastSeen: terminal.lastSeen,
         scansToday: terminal.scansToday || 0,
