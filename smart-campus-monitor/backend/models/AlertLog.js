@@ -4,7 +4,7 @@ const alertLogSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ['blocked', 'unauthorized', 'late_return', 'terminal_offline'],
+      enum: ['blocked', 'unauthorized', 'late_return', 'terminal_offline', 'sync_failed', 'security'],
       required: [true, 'Alert type is required'],
     },
     message: {

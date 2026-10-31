@@ -14,8 +14,14 @@ const {
   reconcileStudentDeviceAllocations,
 } = require('../services/deviceAllocationService');
 
-const buildKey = () =>
-  crypto.createHash('sha256').update(String(process.env.FP_SECRET || 'smart-campus-fp')).digest();
+// Legacy AES-256-CBC key. No fallback secret.
+const buildKey = () => {
+  if (!process.env.FP_SECRET) {
+    throw new Error('FP_SECRET is not set; legacy fingerprint templates cannot be written');
+  }
+
+  return crypto.createHash('sha256').update(String(process.env.FP_SECRET)).digest();
+};
 
 const encryptTemplate = (templateBuffer) => {
   const iv = crypto.randomBytes(16);

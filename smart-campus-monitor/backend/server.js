@@ -9,6 +9,35 @@ const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
 const { register, metricsMiddleware } = require('./utils/metrics');
+const { assertBiometricKey } = require('./services/templateCrypto');
+const { getBiometricConfig } = require('./config/biometricConfig');
+
+// Refuse to start with missing secrets. There are no development fallbacks.
+const assertRequiredSecrets = () => {
+  const missing = ['MONGO_URI', 'JWT_SECRET'].filter((name) => !String(process.env[name] || '').trim());
+
+  if (missing.length) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+
+  assertBiometricKey();
+  // Throws on an invalid value in any biometric setting.
+  const biometricConfig = getBiometricConfig();
+
+  if (!biometricConfig.adms.httpsEnabled) {
+    console.warn(
+      'ADMS push runs over plain HTTP. Keep /iclock reachable only from the terminal VLAN (ADMS_ALLOWED_CIDRS).'
+    );
+  }
+
+  if (!biometricConfig.adms.allowedCidrs.length) {
+    console.warn('ADMS_ALLOWED_CIDRS is empty: /iclock accepts loopback requests only.');
+  }
+};
+
+if (process.env.NODE_ENV !== 'test') {
+  assertRequiredSecrets();
+}
 
 // Route imports
 const authRoutes = require('./routes/auth');
@@ -30,6 +59,8 @@ const settingsRoutes = require('./routes/settings');
 const aiQueryRoutes = require('./routes/aiQuery');
 const { startTerminalJobs } = require('./jobs/terminalJobs');
 const { startHostellerJobs } = require('./jobs/hostellerJobs');
+const { startSyncJobs } = require('./jobs/syncJobs');
+const iclockRoutes = require('./routes/iclock');
 const { attachSocketServer } = require('./socket');
 
 const app = express();
@@ -59,6 +90,9 @@ const limiter = rateLimit({
   message: 'Too many requests, please try again later',
 });
 app.use('/api/', limiter);
+
+// ADMS push from terminals: plain-text bodies, own guard and rate limit, outside /api.
+app.use('/iclock', iclockRoutes);
 
 // Body parsing
 app.use(express.json());
@@ -109,6 +143,7 @@ app.use(errorHandler);
 if (process.env.NODE_ENV !== 'test') {
   startTerminalJobs();
   startHostellerJobs();
+  startSyncJobs();
   attachSocketServer(httpServer);
 }
 

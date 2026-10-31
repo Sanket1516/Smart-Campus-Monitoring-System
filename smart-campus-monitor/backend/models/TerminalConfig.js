@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { DIALECTS } = require('../config/biometricConfig');
 
 const ALLOWED_TERMINALS_PER_GATE = [1, 2, 3, 4];
 const TERMINAL_TYPES = ['ENROLLMENT', 'MAIN_GATE', 'HOSTEL', 'GENERAL'];
@@ -114,6 +115,85 @@ const terminalConfigSchema = new mongoose.Schema(
       ref: 'Admin',
       default: null,
     },
+    // ── Terminal sync (ADMS push + sidecar) ──
+    // Group names a student can target, e.g. "main-gate", "hostel-a".
+    groups: {
+      type: [String],
+      default: [],
+      set: (values) =>
+        [...new Set((values || []).map((value) => String(value).trim().toLowerCase()).filter(Boolean))],
+    },
+    enabled: {
+      type: Boolean,
+      default: true,
+    },
+    // Push dialect, detected by probe commands. See HARDWARE_VERIFICATION.md.
+    dialect: {
+      type: String,
+      enum: DIALECTS,
+      default: 'unknown',
+    },
+    dialectProbe: {
+      classicReturn: { type: Number, default: null },
+      v3Return: { type: Number, default: null },
+      probedAt: { type: Date, default: null },
+    },
+    pushVersion: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    firmware: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    algorithmVersion: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    // null = not yet tested.
+    tlsSupported: {
+      type: Boolean,
+      default: null,
+    },
+    // Only whether a comm key is configured. The key itself is never stored here.
+    commKeySet: {
+      type: Boolean,
+      default: false,
+    },
+    lastPushAt: {
+      type: Date,
+      default: null,
+    },
+    // Last INFO= string the terminal sent on getrequest (format UNVERIFIED, kept raw).
+    pushInfoRaw: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    // Upload stamps the terminal reported; returned in the next handshake.
+    admsStamps: {
+      attlog: { type: String, default: '' },
+      operlog: { type: String, default: '' },
+      attphoto: { type: String, default: '' },
+    },
+    lastSyncAt: {
+      type: Date,
+      default: null,
+    },
+    syncStatus: {
+      type: String,
+      enum: ['unknown', 'ok', 'pending', 'degraded', 'failed'],
+      default: 'unknown',
+    },
+    // Counter for TerminalCommand.cmdId; advanced atomically by the queue.
+    nextCmdId: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   { versionKey: false }
 );
@@ -144,6 +224,7 @@ terminalConfigSchema.pre('validate', function (next) {
 terminalConfigSchema.statics.isValidMachineNumber = isValidMachineNumber;
 terminalConfigSchema.index({ terminalType: 1 });
 terminalConfigSchema.index({ hostel: 1 });
+terminalConfigSchema.index({ groups: 1 });
 terminalConfigSchema.statics.TERMINAL_TYPES = TERMINAL_TYPES;
 
 module.exports = mongoose.model('TerminalConfig', terminalConfigSchema);

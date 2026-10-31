@@ -74,9 +74,28 @@ const studentSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Legacy single-template field. scripts/migrate-templates.js moves it to BiometricTemplate.
     fingerprintTemplate: {
       type: String,
       select: false,
+      default: null,
+    },
+    // none: no user record yet; awaiting: user record queued, no template stored; enrolled: template stored.
+    fingerprintStatus: {
+      type: String,
+      enum: ['none', 'awaiting', 'enrolled'],
+      default: 'none',
+    },
+    // Terminal groups this student is provisioned to (matched against TerminalConfig.groups).
+    targetTerminalGroups: {
+      type: [String],
+      default: [],
+      set: (values) =>
+        [...new Set((values || []).map((value) => String(value).trim().toLowerCase()).filter(Boolean))],
+    },
+    consentRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ConsentRecord',
       default: null,
     },
     studentType: {
@@ -156,6 +175,8 @@ studentSchema.index({ zktUserID: 1 }, { unique: true, sparse: true });
 studentSchema.index({ hostel: 1 });
 studentSchema.index({ studentType: 1 });
 studentSchema.index({ accessStatus: 1 });
+studentSchema.index({ fingerprintStatus: 1 });
+studentSchema.index({ targetTerminalGroups: 1 });
 
 studentSchema.pre('validate', function (next) {
   const allowedDepartments = getDepartmentOptions(this.course);

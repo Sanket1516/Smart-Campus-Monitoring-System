@@ -12,6 +12,8 @@ const EVENTS = {
   hostelWardenChanged: 'hostel:warden_changed',
   unknownTerminal: 'unknown:terminal',
   settingsUpdated: 'settings:updated',
+  syncCommand: 'sync:command',
+  syncTerminal: 'sync:terminal',
 };
 
 const setIo = (io) => {
@@ -52,6 +54,9 @@ const emitWardenLateReturn = (wardenId, payload) =>
 const emitHostelWardenChanged = (payload) => emit(EVENTS.hostelWardenChanged, payload);
 const emitUnknownTerminal = (payload) => emit(EVENTS.unknownTerminal, payload);
 const emitSettingsUpdated = (payload) => emit(EVENTS.settingsUpdated, payload);
+// Payloads carry ids and status only, never command text or template data.
+const emitCommandStatus = (payload) => emit(EVENTS.syncCommand, payload);
+const emitTerminalSync = (payload) => emit(EVENTS.syncTerminal, payload);
 
 module.exports = {
   EVENTS,
@@ -68,4 +73,6 @@ module.exports = {
   emitHostelWardenChanged,
   emitUnknownTerminal,
   emitSettingsUpdated,
+  emitCommandStatus,
+  emitTerminalSync,
 };
