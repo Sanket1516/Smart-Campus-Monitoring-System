@@ -18,6 +18,9 @@ import {
   getHostelsApi,
 } from '../services/api';
 import ExcelUploadModal from '../components/ExcelUploadModal';
+import FingerprintStatusBadge from '../components/sync/FingerprintStatusBadge';
+import { EnrollmentStateBadge, GateStatusBadge, SimulatedBadge, SyncStatusBadge, gateFor } from '../components/sync/SyncStatusBadges';
+import StudentSyncDrawer from '../components/sync/StudentSyncDrawer';
 
 const courseOptions = ['pharmacy', 'engineering', 'mbatech', 'pharmatech'];
 const departmentByCourse = {
@@ -390,6 +393,7 @@ export default function StudentManagement() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState(createStudentForm());
+  const [syncStudentId, setSyncStudentId] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -585,6 +589,24 @@ export default function StudentManagement() {
                     Year
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                    ZK user ID
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                    Fingerprint / enrolment
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                    Gate Entry
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                    Gate Exit
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                    Overall sync
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                    Access
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                     Actions
                   </th>
                 </tr>
@@ -621,7 +643,44 @@ export default function StudentManagement() {
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
                       Year {student.year || '-'}
                     </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                      {student.zktUserID ?? '—'}
+                    </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <FingerprintStatusBadge status={student.fingerprintStatus} />
+                        {student.enrollmentState && student.enrollmentState !== 'idle' && student.enrollmentState !== 'captured' && (
+                          <EnrollmentStateBadge state={student.enrollmentState} />
+                        )}
+                        <SimulatedBadge show={student.enrollmentSimulated} />
+                      </div>
+                      {student.fingerprintEnrolledAt && (
+                        <div className="mt-1 text-xs text-gray-500">
+                          {new Date(student.fingerprintEnrolledAt).toLocaleDateString('en-IN')} · {student.enrollmentDeviceSN || '—'}
+                        </div>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm">
+                      <GateStatusBadge gate={gateFor(student.gateSync, 'GATE_ENTRY')} />
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm">
+                      <GateStatusBadge gate={gateFor(student.gateSync, 'GATE_EXIT')} />
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm">
+                      <SyncStatusBadge status={student.syncStatus} />
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${student.accessStatus === 'blocked' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'}`}>
+                        {student.accessStatus === 'blocked' ? 'Blocked' : 'Active'}
+                      </span>
+                    </td>
+                    <td className="flex gap-2 whitespace-nowrap px-6 py-4 text-sm">
+                      <button
+                        onClick={() => setSyncStudentId(student._id)}
+                        className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                      >
+                        Sync
+                      </button>
                       <button
                         onClick={() => handleEdit(student)}
                         className="flex items-center gap-1 rounded bg-primary-600 px-3 py-1.5 text-white transition-colors hover:bg-primary-700"
@@ -672,6 +731,10 @@ export default function StudentManagement() {
           secondaryAction={() => handleCreateStudent({ continueToEnrollment: true })}
           secondaryLabel="Create And Open Enrollment"
         />
+      )}
+
+      {syncStudentId && (
+        <StudentSyncDrawer studentId={syncStudentId} onClose={() => { setSyncStudentId(null); loadData(); }} />
       )}
 
       <ExcelUploadModal

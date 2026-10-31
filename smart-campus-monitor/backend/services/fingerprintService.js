@@ -14,12 +14,11 @@ const ZK_PORT = 4370;
 const ZK_TIMEOUT = 10000;
 const ZK_INPORT = 4000;
 
-// Legacy AES-256-CBC key for Student.fingerprintTemplate. No fallback secret.
+// Legacy direct-sync path (LEGACY_ZK_DIRECT_SYNC=true). No fallback secret.
 const buildKey = () => {
   if (!process.env.FP_SECRET) {
-    throw new Error('FP_SECRET is not set; legacy fingerprint templates cannot be read');
+    throw new Error('FP_SECRET is required to decrypt legacy fingerprint templates');
   }
-
   return crypto.createHash('sha256').update(String(process.env.FP_SECRET)).digest();
 };
 

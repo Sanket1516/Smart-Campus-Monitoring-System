@@ -14,12 +14,16 @@ const {
   reconcileStudentDeviceAllocations,
 } = require('../services/deviceAllocationService');
 
-// Legacy AES-256-CBC key. No fallback secret.
+const syncHooks = require('../services/sync/hooks');
+const enrollmentService = require('../services/enrollment/enrollmentService');
+const terminalSync = require('../services/sync/terminalSyncService');
+const BiometricTemplate = require('../models/BiometricTemplate');
+
+// Legacy (LEGACY_ZK_DIRECT_SYNC=true) only. No fallback secret: FP_SECRET must be set.
 const buildKey = () => {
   if (!process.env.FP_SECRET) {
-    throw new Error('FP_SECRET is not set; legacy fingerprint templates cannot be written');
+    throw new Error('FP_SECRET is required for the legacy direct-sync enrolment path');
   }
-
   return crypto.createHash('sha256').update(String(process.env.FP_SECRET)).digest();
 };
 
@@ -65,6 +69,8 @@ const buildEnrollmentSummary = (student) => ({
   photoUrl: student.photoUrl,
   fingerprintEnrolled: student.fingerprintEnrolled,
   fingerprintEnrolledAt: student.fingerprintEnrolledAt,
+  fingerprintStatus: student.fingerprintStatus,
+  targetTerminalGroups: student.targetTerminalGroups,
   zktUserID: student.zktUserID,
   studentType: student.studentType,
   hostel: student.hostel,
@@ -74,8 +80,53 @@ const buildEnrollmentSummary = (student) => ({
   accessStatus: student.accessStatus,
 });
 
+// New terminal-sync path for initiate: assign the PIN and start "menu" enrolment.
+const initiateEnrollmentViaSync = async (req, res) => {
+  const { studentId } = req.params;
+  const { zktUserID } = req.body;
+  const student = await Student.findOne({ _id: studentId, isActive: true });
+
+  if (!student) {
+    return res.status(404).json({ message: 'Student not found' });
+  }
+
+  if (!student.zktUserID && zktUserID) {
+    const existingStudent = await Student.findOne({ zktUserID, _id: { $ne: studentId } }).select('_id sapId name');
+    if (existingStudent) {
+      return res.status(400).json({
+        message: `ZKT user ID is already assigned to ${existingStudent.name} (${existingStudent.sapId})`,
+      });
+    }
+    await Student.updateOne({ _id: studentId }, { $set: { zktUserID: Number(zktUserID) } });
+  }
+
+  const result = await enrollmentService.startEnrollment(studentId, {
+    method: req.body.method,
+    targetGroups: req.body.targetGroups,
+    fingerIndex: req.body.fingerIndex,
+    actor: req.admin,
+  });
+
+  return res.json({
+    ready: true,
+    message: result.instructions,
+    enrollmentStation: { deviceSN: result.terminal.deviceSN, terminalLabel: result.terminal.terminalLabel },
+    zktUserID: Number(result.pin),
+    method: result.method,
+    deviceResult: { queued: result.steps },
+  });
+};
+
 // POST /api/enrollment/initiate/:studentId
 exports.initiateEnrollment = async (req, res) => {
+  if (!syncHooks.legacyDirectSync()) {
+    try {
+      return await initiateEnrollmentViaSync(req, res);
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({ message: error.message });
+    }
+  }
+
   try {
     const { studentId } = req.params;
     const { zktUserID } = req.body;
@@ -114,8 +165,103 @@ exports.initiateEnrollment = async (req, res) => {
   }
 };
 
+// New terminal-sync path for confirm: make sure a template is stored (pushed by the
+// terminal or read by the sidecar), apply the student type, then fan out.
+const confirmEnrollmentViaSync = async (req, res) => {
+  const { studentId } = req.params;
+  const { studentType, hostelId, roomNumber = '', wardenApprovalRequired = false } = req.body;
+  const student = await Student.findOne({ _id: studentId, isActive: true });
+
+  if (!student) {
+    return res.status(404).json({ message: 'Student not found' });
+  }
+
+  let templateCount = await BiometricTemplate.countDocuments({ student: studentId, flag: { $ne: 0 } });
+  let fetchResult = null;
+
+  if (!templateCount) {
+    fetchResult = await enrollmentService.fetchEnrollmentTemplate(studentId, { actor: req.admin });
+    templateCount = await BiometricTemplate.countDocuments({ student: studentId, flag: { $ne: 0 } });
+  }
+
+  if (!templateCount) {
+    return res.status(409).json({
+      message:
+        fetchResult?.mode === 'push_query'
+          ? 'No template received yet. A template query was sent to the enrollment terminal; try again in a few seconds.'
+          : 'No fingerprint template found for this student on the enrollment terminal yet.',
+      fetch: fetchResult,
+    });
+  }
+
+  const normalizedType = studentType === 'hosteller' ? 'hosteller' : 'day_scholar';
+  const isHosteller = normalizedType === 'hosteller';
+  let hostel = null;
+
+  if (isHosteller) {
+    hostel = await Hostel.findOne({ _id: hostelId, isActive: true });
+
+    if (!hostel) {
+      return res.status(400).json({ message: 'Valid hostel is required for hosteller enrollment' });
+    }
+
+    if (!roomNumber?.trim()) {
+      return res.status(400).json({ message: 'Room number is required for hosteller enrollment' });
+    }
+  }
+
+  await Student.findByIdAndUpdate(studentId, {
+    $set: {
+      fingerprintEnrolled: true,
+      fingerprintEnrolledAt: student.fingerprintEnrolledAt || new Date(),
+      fingerprintStatus: 'enrolled',
+      studentType: normalizedType,
+      hostel: isHosteller ? hostel._id : null,
+      roomNumber: isHosteller ? roomNumber.trim() : '',
+      isHosteller,
+      wardenApprovalRequired: isHosteller ? Boolean(wardenApprovalRequired) : false,
+    },
+  });
+
+  const syncResult = await terminalSync.enqueueProvision(studentId, { actor: req.admin, reason: 'enrolment_fanout' });
+  const updatedStudent = await sanitizeStudent(studentId);
+
+  await createAuditLog({
+    admin: req.admin,
+    action: `Enrolled fingerprint for ${updatedStudent.name} (${updatedStudent.sapId})`,
+    entity: 'Student',
+    entityId: studentId,
+    oldValue: { fingerprintStatus: student.fingerprintStatus },
+    newValue: {
+      fingerprintStatus: 'enrolled',
+      zktUserID: updatedStudent.zktUserID,
+      studentType: normalizedType,
+      hostel: hostel?._id || null,
+      templates: templateCount,
+      terminals: syncResult.terminals,
+    },
+    ipAddress: req.ip,
+  });
+
+  return res.json({
+    success: true,
+    student: buildEnrollmentSummary(updatedStudent),
+    allocations: [],
+    previousAllocations: [],
+    sync: syncResult,
+  });
+};
+
 // POST /api/enrollment/confirm/:studentId
 exports.confirmEnrollment = async (req, res) => {
+  if (!syncHooks.legacyDirectSync()) {
+    try {
+      return await confirmEnrollmentViaSync(req, res);
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({ message: error.message });
+    }
+  }
+
   try {
     const { studentId } = req.params;
     const {
@@ -289,7 +435,9 @@ exports.updateEnrollmentType = async (req, res) => {
     const updatedStudent = await sanitizeStudent(studentId);
     let allocationResult = null;
 
-    if (updatedStudent.fingerprintEnrolled) {
+    if (!syncHooks.legacyDirectSync()) {
+      await syncHooks.onStudentUpdated(updatedStudent, req.admin);
+    } else if (updatedStudent.fingerprintEnrolled) {
       allocationResult = await reconcileStudentDeviceAllocations(updatedStudent);
 
       if (allocationResult.removedAllocations.length) {

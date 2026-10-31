@@ -55,6 +55,13 @@ const terminalValidators = [
 
     return true;
   }),
+  body('deviceRole')
+    .optional({ values: 'falsy' })
+    .isIn(TerminalConfig.DEVICE_ROLES)
+    .withMessage(`Device role must be one of ${TerminalConfig.DEVICE_ROLES.join(', ')}`),
+  body('deviceModel').optional({ values: 'falsy' }).trim().isLength({ max: 40 }),
+  body('communicationProtocol').optional({ values: 'falsy' }).isIn(TerminalConfig.COMM_PROTOCOLS),
+  body('simulated').optional().isBoolean().toBoolean(),
   body('terminalIP')
     .optional({ values: 'falsy' })
     .trim()
@@ -88,6 +95,13 @@ const terminalUpdateValidators = [
 
     return true;
   }),
+  body('deviceRole')
+    .optional({ values: 'falsy' })
+    .isIn(TerminalConfig.DEVICE_ROLES)
+    .withMessage(`Device role must be one of ${TerminalConfig.DEVICE_ROLES.join(', ')}`),
+  body('deviceModel').optional({ values: 'falsy' }).trim().isLength({ max: 40 }),
+  body('communicationProtocol').optional({ values: 'falsy' }).isIn(TerminalConfig.COMM_PROTOCOLS),
+  body('simulated').optional().isBoolean().toBoolean(),
   body('terminalIP')
     .optional({ values: 'falsy' })
     .trim()

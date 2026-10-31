@@ -13,10 +13,18 @@ const router = express.Router();
 
 const studentIdValidator = param('studentId').isMongoId().withMessage('Invalid student id');
 
+// With terminal sync (default) the PIN is assigned automatically, so zktUserID is
+// optional; the legacy direct-sync path still requires it.
 const sharedEnrollmentValidators = [
   body('zktUserID')
+    .if(() => process.env.LEGACY_ZK_DIRECT_SYNC === 'true')
     .isInt({ min: 1, max: 10000 })
     .withMessage('ZKT user ID must be between 1 and 10000')
+    .toInt(),
+  body('zktUserID')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 1, max: 999999999 })
+    .withMessage('ZKT user ID must be a positive number')
     .toInt(),
 ];
 

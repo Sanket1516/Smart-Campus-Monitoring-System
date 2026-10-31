@@ -1,72 +1,83 @@
-// Classic iClock push dialect. Command strings follow open-source ADMS servers that were
-// run against real ZKTeco firmware (shadow046/zkteco-adms, s0x90/zkteco-adms,
-// oran-soluciones/mini-asistencia). Fields are TAB-separated.
+/**
+ * Classic ADMS push dialect (DATA ... USERINFO / FINGERTMP).
+ * USER ADD / USER DEL fail with -1002 on these firmwares; only DATA commands are used.
+ */
 const {
+  assertPin,
+  assertFingerIndex,
+  assertFlag,
+  assertTemplate,
   clean,
-  cleanBase64,
-  cleanFingerIndex,
-  cleanName,
-  cleanPin,
+  computeTemplateSize,
   joinFields,
-} = require('./shared');
+  optionalField,
+} = require('./common');
 
-const TAB = '\t';
+const createClassicDialect = (options = {}) => {
+  const { sizeMode = 'bytes', emptyFieldMode = 'omit' } = options;
 
-const createUser = (user, config) => {
-  const pairs = [
-    ['PIN', cleanPin(user.pin)],
-    ['Name', cleanName(user.name, config.adms.maxNameLength)],
-    ['Pri', clean(user.privilege ?? 0)],
-    ['Passwd', clean(user.password)],
-    ['Card', clean(user.card)],
-    ['Grp', clean(user.group)],
-    ['TZ', clean(user.timezone)],
-  ];
+  return {
+    name: 'classic',
 
-  // UNVERIFIED: whether an empty field erases the stored value. PIN is always sent.
-  const fields =
-    config.adms.emptyFieldPolicy === 'omit'
-      ? pairs.filter(([key, value]) => key === 'PIN' || value !== '')
-      : pairs;
+    createUser({ pin, name, privilege = 0, password = '', card = '', group = 1, timezone = '' }) {
+      return `DATA UPDATE USERINFO ${joinFields([
+        ['PIN', assertPin(pin)],
+        ['Name', clean(name, 24)],
+        ['Pri', Number(privilege) || 0],
+        ['Passwd', optionalField(password, emptyFieldMode)],
+        ['Card', optionalField(card, emptyFieldMode)],
+        ['Grp', Number(group) || 1],
+        ['TZ', optionalField(timezone, emptyFieldMode)],
+      ])}`;
+    },
 
-  return `DATA UPDATE USERINFO ${joinFields(fields, TAB)}`;
+    writeTemplate({ pin, fingerIndex, flag = 1, template, size }) {
+      const tmp = assertTemplate(template);
+      return `DATA UPDATE FINGERTMP ${joinFields([
+        ['PIN', assertPin(pin)],
+        ['FID', assertFingerIndex(fingerIndex)],
+        ['Size', size ?? computeTemplateSize(tmp, sizeMode)],
+        ['Valid', assertFlag(flag)],
+        ['TMP', tmp],
+      ])}`;
+    },
+
+    deleteUser({ pin }) {
+      return `DATA DELETE USERINFO PIN=${assertPin(pin)}`;
+    },
+
+    queryUser({ pin }) {
+      return `DATA QUERY USERINFO PIN=${assertPin(pin)}`;
+    },
+
+    // UNVERIFIED: exact classic syntax for querying one finger.
+    queryTemplate({ pin, fingerIndex }) {
+      const fields = [['PIN', assertPin(pin)]];
+      if (fingerIndex !== undefined && fingerIndex !== null) {
+        fields.push(['FID', assertFingerIndex(fingerIndex)]);
+      }
+      return `DATA QUERY FINGERTMP ${joinFields(fields)}`;
+    },
+
+    // UNVERIFIED: query without a PIN to list every user.
+    queryAllUsers() {
+      return 'DATA QUERY USERINFO';
+    },
+
+    // UNVERIFIED: remote enrolment over push.
+    enrollFingerprint({ pin, fingerIndex, retry = 3, overwrite = 1 }) {
+      return `ENROLL_FP ${joinFields([
+        ['PIN', assertPin(pin)],
+        ['FID', assertFingerIndex(fingerIndex)],
+        ['RETRY', Number(retry)],
+        ['OVERWRITE', Number(overwrite)],
+      ])}`;
+    },
+
+    probe({ pin }) {
+      return this.queryUser({ pin });
+    },
+  };
 };
 
-const writeTemplate = ({ pin, fingerIndex, flag, size, templateBase64 }) =>
-  `DATA UPDATE FINGERTMP ${joinFields(
-    [
-      ['PIN', cleanPin(pin)],
-      ['FID', cleanFingerIndex(fingerIndex)],
-      ['Size', Number(size)],
-      // Valid carries the template flag: 1 valid, 3 duress (duress UNVERIFIED over push).
-      ['Valid', Number(flag ?? 1)],
-      ['TMP', cleanBase64(templateBase64)],
-    ],
-    TAB
-  )}`;
-
-// The full word DELETE is required; "DATA DEL USERINFO" and "USER DEL" are rejected.
-const deleteUser = ({ pin }) => `DATA DELETE USERINFO PIN=${cleanPin(pin)}`;
-
-const queryUser = ({ pin }) => `DATA QUERY USERINFO PIN=${cleanPin(pin)}`;
-
-const queryTemplate = ({ pin, fingerIndex }) =>
-  `DATA QUERY FINGERTMP ${joinFields(
-    [
-      ['PIN', cleanPin(pin)],
-      ['FID', cleanFingerIndex(fingerIndex)],
-    ],
-    TAB
-  )}`;
-
-const probe = ({ pin }) => queryUser({ pin });
-
-module.exports = {
-  name: 'classic',
-  createUser,
-  writeTemplate,
-  deleteUser,
-  queryUser,
-  queryTemplate,
-  probe,
-};
+module.exports = { createClassicDialect };

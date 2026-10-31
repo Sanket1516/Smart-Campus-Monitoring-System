@@ -4,6 +4,7 @@ const UnauthorizedLog = require('../models/UnauthorizedLog');
 const TerminalConfig = require('../models/TerminalConfig');
 const AlertLog = require('../models/AlertLog');
 const { createAuditLog } = require('../services/auditService');
+const syncHooks = require('../services/sync/hooks');
 
 const startOfToday = () => {
   const now = new Date();
@@ -84,6 +85,10 @@ exports.blockStudent = async (req, res) => {
       ipAddress: req.ip,
     });
 
+    // Software deny is already authoritative (accessStatus saved above); now remove
+    // the student from every terminal (offline terminals get it when they poll).
+    const terminalSync = await syncHooks.onStudentBlocked(student, req.admin);
+
     const populatedStudent = await Student.findById(student._id)
       .populate('hostel', 'name')
       .populate('blockedBy', 'name email');
@@ -91,6 +96,7 @@ exports.blockStudent = async (req, res) => {
     res.json({
       success: true,
       student: serializeBlockedStudent(populatedStudent),
+      terminalSync,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -156,6 +162,8 @@ exports.blockStudentsByType = async (req, res) => {
       )
     );
 
+    const terminalSync = syncHooks.onStudentsBlocked(studentIds, req.admin);
+
     const updatedStudents = await Student.find({ _id: { $in: studentIds } })
       .populate('hostel', 'name')
       .populate('blockedBy', 'name email')
@@ -166,6 +174,7 @@ exports.blockStudentsByType = async (req, res) => {
       count: updatedStudents.length,
       studentType,
       students: updatedStudents.map(serializeBlockedStudent),
+      terminalSync,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -213,6 +222,9 @@ exports.unblockStudent = async (req, res) => {
       ipAddress: req.ip,
     });
 
+    // Re-create the user and stored templates on target terminals (no recapture).
+    const terminalSync = await syncHooks.onStudentUnblocked(student, req.admin);
+
     const populatedStudent = await Student.findById(student._id)
       .populate('hostel', 'name')
       .populate('blockedBy', 'name email');
@@ -220,6 +232,7 @@ exports.unblockStudent = async (req, res) => {
     res.json({
       success: true,
       student: serializeBlockedStudent(populatedStudent),
+      terminalSync,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -282,11 +295,14 @@ exports.unblockStudentsByType = async (req, res) => {
       )
     );
 
+    const terminalSync = syncHooks.onStudentsUnblocked(studentIds, req.admin);
+
     res.json({
       success: true,
       count: studentIds.length,
       studentType,
       studentIds,
+      terminalSync,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

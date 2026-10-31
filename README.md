@@ -15,20 +15,25 @@ A full-stack web application for real-time monitoring of student entry and exit 
 cd backend && npm install
 cd ../frontend && npm install
 
-# 3. Reset student data (from backend/)
+# 3. Configure secrets (the server refuses to start without them)
 cd ../backend
+cp .env.example .env
+#    set MONGO_URI, JWT_SECRET (32+ chars) and TEMPLATE_ENC_KEY:
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# 4. Reset student data
 npm run seed
 
-# 4. Start the backend (Terminal 1)
+# 5. Start the backend (Terminal 1)
 npm run dev
 # → API running at http://localhost:5000
 
-# 5. Start the frontend (Terminal 2)
+# 6. Start the frontend (Terminal 2)
 cd ../frontend
 npm run dev
 # → App running at http://localhost:5173
 
-# 6. Open http://localhost:5173 in your browser
+# 7. Open http://localhost:5173 in your browser
 #    Login: admin / admin123  (or  security1 / security123)
 ```
 
@@ -52,6 +57,7 @@ npm run dev
 14. [Future Scope](#future-scope)
 15. [Authors](#authors)
 16. [License](#license)
+17. [Terminal Sync (eSSL X990, ADMS push)](#terminal-sync-essl-x990-adms-push)
 
 ---
 
@@ -1113,3 +1119,141 @@ For inquiries regarding reuse or redistribution, contact the authors listed abov
   Built with the MERN Stack<br>
   Node.js &bull; Express &bull; MongoDB &bull; React &bull; Vite &bull; Tailwind CSS
 </p>
+
+
+---
+
+## Terminal Sync (eSSL X990, ADMS push)
+
+Zero-licence sync of users and fingerprint templates to about 90 eSSL X990
+(ZKTeco-compatible) terminals. It uses only the open ADMS/iclock push protocol and the
+open-source pyzk library. No paid or cracked eSSL software is involved.
+
+> Status: implemented and tested against **simulated** terminals only (fake ADMS terminal,
+> fake pyzk device). Nothing here has been measured on an X990 yet. See
+> [`smart-campus-monitor/HARDWARE_VERIFICATION.md`](smart-campus-monitor/HARDWARE_VERIFICATION.md)
+> and [`smart-campus-monitor/PILOT_CHECKLIST.md`](smart-campus-monitor/PILOT_CHECKLIST.md).
+
+### Architecture
+
+```
+                      admin / warden browsers
+                                │  HTTPS /api  (JWT, roles)
+┌───────────────────────────────▼───────────────────────────────────┐
+│ Express backend                                                    │
+│  /api/sync (admin API) ─ terminalSyncService ─ TerminalCommand     │
+│  /api/fingerprint/scan        │ queue (MongoDB)   │                │
+│  /iclock (ADMS listener) ◄────┘                   │ templates:     │
+│   cdata / getrequest / devicecmd                  │ AES-256-GCM    │
+│  node-cron: ack sweep, nightly reconciliation     │ key from env   │
+└─────▲──────────────────────────────────────┬──────┴────────────────┘
+      │ terminals dial OUT (HTTP, VLAN only) │ HTTP + shared secret (localhost)
+      │ poll every few s, C:<id>:<cmd>       ▼
+┌─────┴──────────────┐            ┌───────────────────────┐
+│ ~90 X990 terminals │◄── TCP 4370 ─┤ Python pyzk sidecar   │
+│ (gate / hostel /   │  bulk loads, │ (FastAPI, internal,   │
+│  enrollment)       │  reads, audit│  GPL-2.0 not shipped) │
+└────────────────────┘  backups     └───────────────────────┘
+```
+
+* **Daily changes** (new student, block, unblock, enrolment fan-out) go through the push
+  queue: one command per poll by default, so terminals that are offline catch up when they
+  poll again.
+* **Bulk first loads, template reads, nightly audits and backups** go through the
+  sidecar. It is the only client that opens port 4370.
+* **One PIN per student** (`Student.zktUserID`) on every terminal.
+* **Software deny stays authoritative.** A blocked student is refused by the scan
+  pipeline at once, even before the terminal has processed the delete. A punch by a blocked
+  student raises a security alert and queues an immediate delete.
+
+### Flows
+
+| Event | What happens |
+|---|---|
+| Student added (form or Excel) | status *Awaiting fingerprint*; `USER_CREATE` queued on every enabled gate terminal in the student's groups |
+| Enrolment (Enrollment page) | consent check (parental for under-18s) → user record on the enrollment terminal → person enrols on the device menu → template arrives (push upload, or *Fetch template* via sidecar) → stored encrypted → status *Enrolled* → fan-out to target terminals |
+| Block (single or bulk) | `USER_DELETE` queued for every enabled terminal (including offline ones); pending creates cancelled |
+| Unblock | user + stored templates re-queued (no recapture) |
+| Student deactivated / consent withdrawn / "De-enrol & erase" | deletes queued on all terminals; templates erased from MongoDB (DPDP s.8(7)) |
+| New terminal | all eligible students queued (or sidecar bulk load above `SYNC_BULK_THRESHOLD`) |
+| Nightly (02:20 IST) | per-terminal diff of actual users and desired state; fixes queued; blocked students found on a terminal are deleted and alerted; report stored |
+
+Queue guarantees: commands are persisted in MongoDB, there is at most one open command per
+(terminal, student, type) (partial unique index), and a command is resent after 10 minutes
+without an ack. After 3 attempts it is marked failed and an alert is raised.
+
+### Setup
+
+1. Backend env: copy `smart-campus-monitor/backend/.env.example`. Required are
+   `MONGO_URI`, `JWT_SECRET` and `TEMPLATE_ENC_KEY`. For terminals, also set `ADMS_PORT`,
+   `ADMS_HOST` and `ADMS_ALLOWED_CIDRS`, plus `SIDECAR_URL`/`SIDECAR_SECRET` if you use
+   the sidecar. The server exits at startup if a required secret is missing.
+2. Sidecar: see [`smart-campus-monitor/sidecar/README.md`](smart-campus-monitor/sidecar/README.md).
+3. Network: put the terminals on an isolated VLAN. Expose `ADMS_PORT` only on that VLAN or
+   a VPN, and allow TCP 4370 only from the sidecar host. Set a comm key on every unit.
+   Push has no real authentication (serial number only, plain HTTP unless the X990
+   supports TLS), so the only protection is the IP allow-list, the registered-SN check,
+   rate limiting and the network isolation.
+4. Register each terminal on the **Terminals** page (serial number and IP). On the device,
+   set the ADMS server to `http://<server-vlan-ip>:<ADMS_PORT>`.
+5. Existing data: `node scripts/migrateLegacyTemplates.js --dry-run`, then without
+   `--dry-run`. Add `--requeue` to move every student to the single-PIN scheme.
+6. Pages: **Terminal Sync** (health, terminals, queue, reconciliation, audit, jobs),
+   **Student Management** (fingerprint badge and per-student *Sync* drawer) and
+   **Enrollment** (enrol-once flow).
+
+### Three-device setup (Device 1 enrolment, Device 2 entry, Device 3 exit)
+
+| Device | Role | Responsibility |
+|---|---|---|
+| Device 1 | `ADMIN_ENROLLMENT` | only place fingerprints are captured; keeps templates while a student is blocked |
+| Device 2 | `GATE_ENTRY` | receives users + templates automatically; every punch is an **ENTRY** |
+| Device 3 | `GATE_EXIT` | receives users + templates automatically; every punch is an **EXIT** |
+
+A student is **FULLY_SYNCHRONIZED** only when both gates are verified by read-back
+(SHA-256 of the template read from the gate equals the stored one). If one gate is done
+and the other is not, the status is **PARTIALLY_SYNCHRONIZED**. If both acknowledged but
+cannot be read back, it is **SYNCHRONIZED_UNVERIFIED**.
+
+- Setup, network, registration, troubleshooting, backup, security: [`docs/THREE_DEVICE_SETUP.md`](smart-campus-monitor/docs/THREE_DEVICE_SETUP.md)
+- Audit and plan: [`docs/THREE_DEVICE_AUDIT_AND_PLAN.md`](smart-campus-monitor/docs/THREE_DEVICE_AUDIT_AND_PLAN.md)
+- 24-step real-hardware test plan (not yet performed): [`docs/HARDWARE_TEST_PLAN.md`](smart-campus-monitor/docs/HARDWARE_TEST_PLAN.md)
+- What was tested, and how: [`docs/TEST_RESULTS.md`](smart-campus-monitor/docs/TEST_RESULTS.md)
+- Simulation without hardware: `SIMULATION_MODE=true`, then `node tools/simulateThreeDevices.js --seed` and
+  `node tools/simulateThreeDevices.js --url http://127.0.0.1:5000 --auto-capture` (everything labelled SIMULATED)
+
+### Tests
+
+```bash
+cd smart-campus-monitor/backend && npm test           # Jest: sync unit + e2e with fake terminals
+cd smart-campus-monitor/sidecar && pytest             # sidecar + pilot harness against fake pyzk device
+node smart-campus-monitor/backend/tools/fakeTerminal.js --url http://127.0.0.1:8081 --sn FAKE001
+```
+
+The Jest suite uses an in-memory stand-in for MongoDB models. Run one manual pass against
+a real MongoDB 7 before going live (indexes, partial unique index).
+
+### Implemented vs requires hardware verification
+
+| Area | Implemented and tested (simulated) | Requires X990 verification |
+|---|---|---|
+| ADMS endpoints, `C:` lines, ack parsing, return codes | ✅ | real request/option format (Wireshark) |
+| Dialect adapter (classic / v3) + probe | ✅ exact classic strings tested | which dialect the X990 uses; v3 field names |
+| Template storage (AES-256-GCM, SHA-256, never in API/logs) | ✅ | — |
+| `Size=` unit | configurable (`bytes`/`base64`), logged per upload | which one the X990 expects |
+| Menu enrolment → automatic template upload | handled for OPERLOG/FINGERTMP/BIODATA | whether/which table the X990 uploads |
+| Remote enrolment (push `ENROLL_FP`, pyzk `enroll_user`) | behind flags, off | whether either works |
+| Command queue (dedupe, retries, restart-safe, ordering) | ✅ | multiple `C:` lines per reply |
+| Block → delete from both gates (incl. offline), Device 1 keeps template; software deny | ✅ | delete return code for missing users |
+| Device roles, entry/exit by role, duplicate-punch window | ✅ | — |
+| Read-back verification (FULLY vs PARTIALLY vs UNVERIFIED) | ✅ sidecar and push read-back | whether the X990 answers a push template query |
+| Enrolment state (waiting/captured/failed/timeout, retry), duplicate template | ✅ | X990 menu duplicate-finger check |
+| Pull-mode terminals (sidecar executes queue, pulls attendance) | ✅ against fake device | pyzk `get_attendance` on X990 |
+| Simulation mode (labelled, never reaches real devices) | ✅ | — |
+| Unblock / restore without recapture | ✅ | that copied templates verify on another X990 |
+| Sidecar (pyzk) read/write/delete/backup/bulk load | ✅ against fake device | pyzk compatibility, session limit on 4370 |
+| Nightly reconciliation | ✅ sidecar/state sources; push source queues `DATA QUERY USERINFO` | whether an all-users query works over push |
+| HTTPS for push | optional listener | X990 TLS support |
+| Consent + erasure (DPDP Act 2023) | ✅ (not legal advice) | — |
+
+No performance or reliability numbers are claimed. Record them from the pilot logs.

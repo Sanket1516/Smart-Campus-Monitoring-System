@@ -1,43 +1,19 @@
 require('dotenv').config();
+const fs = require('fs');
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 
 const connectDB = require('./config/db');
+const { validateEnv } = require('./config/validateEnv');
+const { getSyncConfig } = require('./config/terminalSync');
+const { createIclockRouter } = require('./routes/iclock');
 const errorHandler = require('./middleware/errorHandler');
 const { register, metricsMiddleware } = require('./utils/metrics');
-const { assertBiometricKey } = require('./services/templateCrypto');
-const { getBiometricConfig } = require('./config/biometricConfig');
-
-// Refuse to start with missing secrets. There are no development fallbacks.
-const assertRequiredSecrets = () => {
-  const missing = ['MONGO_URI', 'JWT_SECRET'].filter((name) => !String(process.env[name] || '').trim());
-
-  if (missing.length) {
-    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
-  }
-
-  assertBiometricKey();
-  // Throws on an invalid value in any biometric setting.
-  const biometricConfig = getBiometricConfig();
-
-  if (!biometricConfig.adms.httpsEnabled) {
-    console.warn(
-      'ADMS push runs over plain HTTP. Keep /iclock reachable only from the terminal VLAN (ADMS_ALLOWED_CIDRS).'
-    );
-  }
-
-  if (!biometricConfig.adms.allowedCidrs.length) {
-    console.warn('ADMS_ALLOWED_CIDRS is empty: /iclock accepts loopback requests only.');
-  }
-};
-
-if (process.env.NODE_ENV !== 'test') {
-  assertRequiredSecrets();
-}
 
 // Route imports
 const authRoutes = require('./routes/auth');
@@ -57,18 +33,36 @@ const hostellerRoutes = require('./routes/hosteller');
 const liveRoutes = require('./routes/live');
 const settingsRoutes = require('./routes/settings');
 const aiQueryRoutes = require('./routes/aiQuery');
+const syncRoutes = require('./routes/sync');
 const { startTerminalJobs } = require('./jobs/terminalJobs');
 const { startHostellerJobs } = require('./jobs/hostellerJobs');
 const { startSyncJobs } = require('./jobs/syncJobs');
-const iclockRoutes = require('./routes/iclock');
 const { attachSocketServer } = require('./socket');
+
+// Fail at startup if required secrets are missing (no development fallbacks).
+if (process.env.NODE_ENV !== 'test') {
+  try {
+    validateEnv();
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
+}
 
 const app = express();
 const httpServer = http.createServer(app);
+const syncConfig = getSyncConfig();
 
 // Connect to MongoDB
 if (process.env.NODE_ENV !== 'test') {
   connectDB();
+}
+
+// ADMS push endpoints for terminals. Mounted before the JSON/urlencoded parsers
+// (terminals post plain text). With ADMS_PORT set they get their own listener instead,
+// which should be bound to the terminal VLAN interface only (ADMS_HOST).
+if (!syncConfig.adms.port) {
+  app.use('/iclock', createIclockRouter());
 }
 
 // Security middleware
@@ -90,9 +84,6 @@ const limiter = rateLimit({
   message: 'Too many requests, please try again later',
 });
 app.use('/api/', limiter);
-
-// ADMS push from terminals: plain-text bodies, own guard and rate limit, outside /api.
-app.use('/iclock', iclockRoutes);
 
 // Body parsing
 app.use(express.json());
@@ -121,6 +112,7 @@ app.use('/api/hosteller', hostellerRoutes);
 app.use('/api/live', liveRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/ai-query', aiQueryRoutes);
+app.use('/api/sync', syncRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -147,11 +139,29 @@ if (process.env.NODE_ENV !== 'test') {
   attachSocketServer(httpServer);
 }
 
+const startAdmsListener = () => {
+  const { port, host, tlsKeyPath, tlsCertPath } = syncConfig.adms;
+  if (!port) return null;
+  const admsApp = express();
+  admsApp.disable('x-powered-by');
+  admsApp.use('/iclock', createIclockRouter());
+  admsApp.use((_req, res) => res.status(404).type('text/plain').send('Not Found'));
+  const server =
+    tlsKeyPath && tlsCertPath
+      ? https.createServer({ key: fs.readFileSync(tlsKeyPath), cert: fs.readFileSync(tlsCertPath) }, admsApp)
+      : http.createServer(admsApp);
+  server.listen(port, host, () => {
+    console.log(`ADMS push listener on ${tlsKeyPath ? 'https' : 'http'}://${host}:${port}/iclock`);
+  });
+  return server;
+};
+
 const PORT = process.env.PORT || 5000;
 if (process.env.NODE_ENV !== 'test') {
   httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
   });
+  startAdmsListener();
 }
 
 module.exports = app;
