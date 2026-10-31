@@ -16,7 +16,6 @@ import {
   updateSyncTerminalApi,
 } from '../services/api';
 import SyncHealthPanel from '../components/sync/SyncHealthPanel';
-import PageHeader from '../components/brand/PageHeader';
 import useSyncEvents from '../components/sync/useSyncEvents';
 import { Pill, btnPrimary, btnSecondary, card, errorMessage, formatDateTime, input, td, th } from '../components/sync/syncUi';
 import { ROLE_LABELS, SimulatedBadge } from '../components/sync/SyncStatusBadges';
@@ -413,12 +412,10 @@ export default function TerminalSync() {
   const [tab, setTab] = useState('terminals');
   return (
     <div className="space-y-4">
-      <PageHeader
-        eyebrow="Infrastructure · Biometric synchronisation"
-        title="One Enrollment. Two Dedicated Gate Terminals."
-        description="Every command sent to a terminal, every acknowledgement and every read-back verification. Offline terminals catch up when they reconnect."
-        motif="aurora"
-      />
+      <div className="flex items-center gap-2">
+        <HiOutlineStatusOnline className="h-6 w-6 text-primary-600" />
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Terminal Sync</h1>
+      </div>
       <SyncHealthPanel />
       <div className={card}>
         <div className="mb-4 flex flex-wrap gap-2 border-b border-gray-200 pb-2 dark:border-gray-700">

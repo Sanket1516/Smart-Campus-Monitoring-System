@@ -41,11 +41,10 @@ export default function Hostellers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4 relative overflow-hidden keep-dark rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
-        <div className="max-w-3xl">
-          <p className="eyebrow mb-3">Safety · Hosteller monitoring</p>
-          <h1 className="display-md text-white">Student Safety Beyond the Campus Gate.</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-200 md:text-base">Who is inside, who is out, who has an active approval, and who came back after curfew.</p>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Hosteller Monitoring</h1>
+          <p className="text-gray-500">Track hosteller entry/exit and curfew compliance</p>
         </div>
         <button
           onClick={load}

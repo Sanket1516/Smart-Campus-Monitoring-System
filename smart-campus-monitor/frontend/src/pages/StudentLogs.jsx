@@ -23,14 +23,13 @@ export default function StudentLogs() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('entry'); // entry | visitors | unauthorized
-  const [filters, setFilters] = useState(() => ({
+  const [filters, setFilters] = useState({
     date: new Date().toISOString().split('T')[0],
-    // The top-bar search links here with ?search=<SAP ID>.
-    sapId: new URLSearchParams(window.location.search).get('search') || '',
+    sapId: '',
     category: '',
     status: '',
     page: 1,
-  }));
+  });
 
   useEffect(() => {
     const load = async () => {
@@ -66,11 +65,10 @@ export default function StudentLogs() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4 relative overflow-hidden keep-dark rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
-        <div className="max-w-3xl">
-          <p className="eyebrow mb-3">Records · Entry & exit history</p>
-          <h1 className="display-md text-white">Every Movement, On Record.</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-200 md:text-base">Search and filter every entry and exit, visitor and unauthorised attempt recorded by the gate terminals.</p>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Entry Logs</h1>
+          <p className="text-gray-500">View student entry and exit records</p>
         </div>
 
         {/* Tabs */}

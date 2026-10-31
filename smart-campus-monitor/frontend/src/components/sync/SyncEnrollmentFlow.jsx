@@ -11,7 +11,6 @@ import {
   startSyncEnrollmentApi,
 } from '../../services/api';
 import ConsentForm from './ConsentForm';
-import TerminalDevice from '../brand/TerminalDevice';
 import FingerprintStatusBadge from './FingerprintStatusBadge';
 import useSyncEvents from './useSyncEvents';
 import { btnPrimary, btnSecondary, card, errorMessage, input, td, th } from './syncUi';
@@ -161,32 +160,6 @@ export default function SyncEnrollmentFlow({ initialStudentId = '' }) {
       )}
 
       {status && (
-        <div className="grid gap-6 lg:grid-cols-[auto_1fr]">
-          <div className="flex flex-col items-center gap-2">
-            <TerminalDevice
-              mode="ENROLLMENT"
-              title="DEVICE 1"
-              state={
-                status.enrollmentState === 'waiting_capture'
-                  ? 'scanning'
-                  : ['failed', 'timeout'].includes(status.enrollmentState)
-                    ? 'denied'
-                    : status.fingerprintStatus === 'enrolled'
-                      ? 'ok'
-                      : 'idle'
-              }
-              lines={
-                status.enrollmentState === 'waiting_capture'
-                  ? [`USER ID ${status.pin || '—'}`, 'ENROL ON DEVICE MENU']
-                  : status.fingerprintStatus === 'enrolled'
-                    ? [`USER ID ${status.pin}`, 'TEMPLATE STORED']
-                    : ['READY']
-              }
-            />
-            <p className="max-w-[14rem] text-center text-[11px] text-ink-400">
-              Device state reflects the real enrolment status reported by the backend.
-            </p>
-          </div>
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
             <span className="font-medium">{status.name}</span>
@@ -316,7 +289,6 @@ export default function SyncEnrollmentFlow({ initialStudentId = '' }) {
               </table>
             </div>
           )}
-        </div>
         </div>
       )}
     </div>
