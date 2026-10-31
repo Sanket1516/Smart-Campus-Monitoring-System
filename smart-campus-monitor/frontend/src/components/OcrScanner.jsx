@@ -1,239 +1,191 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { createWorker } from 'tesseract.js';
+import useCamera from '../hooks/useCamera';
+import {
+  binarizeAdaptive,
+  binarizeOtsu,
+  drawScaled,
+  invert,
+  sharpen,
+  stretchContrast,
+} from '../utils/frameProcessing';
+
+const SCAN_INTERVAL_MS = 1200;
+const CONFIRM_WINDOW_MS = 4000;
+const SCAN_COOLDOWN_MS = 2500;
+
+// Treatments tried in rotation so one tick never costs more than one OCR pass.
+const VARIANTS = [
+  (c) => binarizeOtsu(stretchContrast(c)),
+  (c) => binarizeAdaptive(sharpen(stretchContrast(c)), 0.06, 8),
+  (c) => binarizeOtsu(stretchContrast(c), true),
+  (c) => sharpen(stretchContrast(c)),
+  (c) => invert(binarizeAdaptive(stretchContrast(c), 0.06, 8)),
+];
+
+// The SAP ID is printed as dark bold digits on a teal strip. Find rows dominated by teal.
+const findTealStrip = (ctx, width, height) => {
+  const d = ctx.getImageData(0, 0, width, height).data;
+  const rowScores = new Float32Array(height);
+  for (let y = 0; y < height; y++) {
+    let teal = 0;
+    for (let x = 0; x < width; x += 2) {
+      const i = (y * width + x) * 4;
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (g > r + 15 && b > r + 10 && g > 100 && b > 100 && r < 200) teal++;
+    }
+    rowScores[y] = teal / (width / 2);
+  }
+  let bestStart = -1, bestLen = 0, curStart = -1, curLen = 0;
+  for (let y = 0; y < height; y++) {
+    if (rowScores[y] > 0.1) {
+      if (curStart === -1) curStart = y;
+      curLen++;
+    } else {
+      if (curLen > bestLen) { bestStart = curStart; bestLen = curLen; }
+      curStart = -1; curLen = 0;
+    }
+  }
+  if (curLen > bestLen) { bestStart = curStart; bestLen = curLen; }
+  if (bestLen < 8) return null;
+  const pad = Math.floor(bestLen * 0.35);
+  return { y: Math.max(0, bestStart - pad), h: Math.min(height, bestLen + pad * 2) };
+};
+
+// Pick the most plausible SAP ID from noisy OCR output (9-11 digits, prefer exactly 11).
+const extractSapCandidate = (text) => {
+  const runs = String(text || '').match(/\d+/g) || [];
+  const joined = runs.join('');
+  return (
+    runs.find((run) => run.length === 11) ||
+    (joined.length === 11 ? joined : null) ||
+    runs.find((run) => run.length >= 9 && run.length <= 11) ||
+    null
+  );
+};
 
 export default function OcrScanner({ onScan, enabled = true }) {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
+  const { videoRef, devices, deviceId, setDeviceId, error: cameraError, ready, torchSupported, torch, setTorch } =
+    useCamera(enabled);
   const workerRef = useRef(null);
-  const scanTimerRef = useRef(null);
+  const frameRef = useRef(null);
+  const busyRef = useRef(false);
+  const tickRef = useRef(0);
+  const pendingRef = useRef({ value: '', at: 0 });
+  const lastAcceptedRef = useRef({ value: '', at: 0 });
+  const onScanRef = useRef(onScan);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(null);
   const [status, setStatus] = useState('Initializing OCR...');
 
-  // ── 1. Initialize Tesseract worker once (reuse across scans) ──
   useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
+    onScanRef.current = onScan;
+  }, [onScan]);
 
-    const init = async () => {
+  // Tesseract worker (digits only), created once.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let cancelled = false;
+    (async () => {
       try {
         const worker = await createWorker('eng');
         await worker.setParameters({
           tessedit_char_whitelist: '0123456789',
-          tessedit_pageseg_mode: '7', // single text line
+          tessedit_pageseg_mode: '7',
         });
-        if (!cancelled) {
-          workerRef.current = worker;
-          setStatus('Ready — point camera at ID card');
+        if (cancelled) {
+          worker.terminate();
+          return;
         }
+        workerRef.current = worker;
+        setStatus('Ready - point camera at the ID card');
       } catch (err) {
         if (!cancelled) setError(`OCR init failed: ${err.message}`);
       }
-    };
-    init();
-
+    })();
     return () => {
       cancelled = true;
-      if (workerRef.current) {
-        workerRef.current.terminate();
-        workerRef.current = null;
-      }
+      workerRef.current?.terminate();
+      workerRef.current = null;
     };
   }, [enabled]);
 
-  // ── 2. Start webcam ──
-  useEffect(() => {
-    if (!enabled) return;
-
-    const startCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: 1280, height: 720 },
-        });
-        streamRef.current = stream;
-        if (videoRef.current) videoRef.current.srcObject = stream;
-        setError('');
-      } catch (err) {
-        if (err.name === 'NotAllowedError') {
-          setError('Camera access denied. Please allow camera access.');
-        } else {
-          setError(`Camera error: ${err.message}`);
-        }
-      }
-    };
-    startCamera();
-
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-    };
-  }, [enabled]);
-
-  // ── 3. Detect the teal/cyan strip on the ID card ──
-  // The SAP ID is printed as dark bold text on a distinctive teal strip.
-  // We scan each row for pixels where green & blue dominate red.
-  const findTealStrip = useCallback((ctx, width, height) => {
-    const imgData = ctx.getImageData(0, 0, width, height);
-    const d = imgData.data;
-
-    const rowScores = new Float32Array(height);
-    for (let y = 0; y < height; y++) {
-      let teal = 0;
-      for (let x = 0; x < width; x++) {
-        const i = (y * width + x) * 4;
-        const r = d[i], g = d[i + 1], b = d[i + 2];
-        // Teal: green & blue notably higher than red
-        if (g > r + 15 && b > r + 10 && g > 100 && b > 100 && r < 200) teal++;
-      }
-      rowScores[y] = teal / width;
-    }
-
-    // Find the longest continuous band with >10% teal pixels
-    let bestStart = -1, bestLen = 0, curStart = -1, curLen = 0;
-    for (let y = 0; y < height; y++) {
-      if (rowScores[y] > 0.1) {
-        if (curStart === -1) curStart = y;
-        curLen++;
-      } else {
-        if (curLen > bestLen) { bestStart = curStart; bestLen = curLen; }
-        curStart = -1; curLen = 0;
-      }
-    }
-    if (curLen > bestLen) { bestStart = curStart; bestLen = curLen; }
-
-    if (bestLen < 8) return null; // too small — not a real strip
-
-    // Add vertical padding
-    const pad = Math.floor(bestLen * 0.35);
-    return {
-      y: Math.max(0, bestStart - pad),
-      h: Math.min(height, bestLen + pad * 2),
-    };
-  }, []);
-
-  // ── 4. Preprocess: dark text on teal/colored bg → black on white ──
-  const preprocessForOcr = useCallback((canvas) => {
-    const ctx = canvas.getContext('2d');
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const d = imgData.data;
-
-    // Scale up for better OCR accuracy (Tesseract prefers larger text)
-    const scale = 2;
-    const bigCanvas = document.createElement('canvas');
-    bigCanvas.width = canvas.width * scale;
-    bigCanvas.height = canvas.height * scale;
-    const bigCtx = bigCanvas.getContext('2d');
-    bigCtx.imageSmoothingEnabled = false;
-    bigCtx.drawImage(canvas, 0, 0, bigCanvas.width, bigCanvas.height);
-
-    const bigData = bigCtx.getImageData(0, 0, bigCanvas.width, bigCanvas.height);
-    const bd = bigData.data;
-
-    for (let i = 0; i < bd.length; i += 4) {
-      const brightness = 0.299 * bd[i] + 0.587 * bd[i + 1] + 0.114 * bd[i + 2];
-      // Dark text → black(0), teal/white bg → white(255)
-      const val = brightness < 120 ? 0 : 255;
-      bd[i] = bd[i + 1] = bd[i + 2] = val;
-    }
-    bigCtx.putImageData(bigData, 0, 0);
-
-    return bigCanvas;
-  }, []);
-
-  // ── 5. Capture frame, find strip, OCR ──
   const captureAndRead = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current || !workerRef.current || busy) return;
-
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !workerRef.current || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
 
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    if (canvas.width === 0) { setBusy(false); return; }
-    ctx.drawImage(video, 0, 0);
-
-    // Try to find the teal strip
-    const strip = findTealStrip(ctx, canvas.width, canvas.height);
-
-    let cropCanvas = document.createElement('canvas');
-    let cropCtx;
-
-    if (strip) {
-      cropCanvas.width = canvas.width;
-      cropCanvas.height = strip.h;
-      cropCtx = cropCanvas.getContext('2d');
-      cropCtx.drawImage(canvas, 0, strip.y, canvas.width, strip.h, 0, 0, canvas.width, strip.h);
-      setStatus('Teal strip found — reading SAP ID...');
-    } else {
-      // Fallback: scan center 30-75% of the frame
-      const y0 = Math.floor(canvas.height * 0.3);
-      const h = Math.floor(canvas.height * 0.45);
-      cropCanvas.width = canvas.width;
-      cropCanvas.height = h;
-      cropCtx = cropCanvas.getContext('2d');
-      cropCtx.drawImage(canvas, 0, y0, canvas.width, h, 0, 0, canvas.width, h);
-      setStatus('Scanning for SAP ID...');
-    }
-
-    const processed = preprocessForOcr(cropCanvas);
-    setPreview(processed.toDataURL());
-
     try {
-      const { data } = await workerRef.current.recognize(processed.toDataURL());
-      const digits = data.text.replace(/\D/g, '');
-      const match = digits.match(/\d{11}/);
+      const frame = frameRef.current || document.createElement('canvas');
+      frameRef.current = frame;
+      frame.width = video.videoWidth;
+      frame.height = video.videoHeight;
+      const ctx = frame.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0);
 
-      if (match) {
-        onScan(match[0]);
-        setStatus(`SAP ID found: ${match[0]}`);
-      } else if (digits.length >= 9) {
-        onScan(digits.slice(0, 11));
-        setStatus(`Partial read: ${digits}`);
-      } else {
-        setStatus(digits ? `Digits: ${digits} — need 11` : 'No digits — adjust position');
+      const strip = findTealStrip(ctx, frame.width, frame.height);
+      const region = strip
+        ? { y: strip.y, h: strip.h }
+        : { y: Math.floor(frame.height * 0.3), h: Math.floor(frame.height * 0.45) };
+      // Tesseract reads best at roughly 40-60px glyph height: upscale small crops, cap big ones.
+      const scale = region.h < 160 ? 3 : region.h < 320 ? 2 : 1;
+      const crop = drawScaled(frame, 0, region.y, frame.width, region.h, scale);
+
+      const processed = VARIANTS[tickRef.current % VARIANTS.length](crop);
+      tickRef.current += 1;
+      setPreview(processed.toDataURL());
+
+      const { data } = await workerRef.current.recognize(processed);
+      const candidate = extractSapCandidate(data.text);
+      const now = Date.now();
+
+      if (!candidate) {
+        setStatus(strip ? 'Strip found - no digits yet, hold steady' : 'Scanning for SAP ID...');
+        return;
       }
-    } catch (err) {
-      setStatus(`OCR error — retrying...`);
+      const last = lastAcceptedRef.current;
+      if (candidate === last.value && now - last.at < SCAN_COOLDOWN_MS) return;
+
+      // Two independent reads must agree before the ID is accepted.
+      const pending = pendingRef.current;
+      if (pending.value === candidate && now - pending.at < CONFIRM_WINDOW_MS) {
+        pendingRef.current = { value: '', at: 0 };
+        lastAcceptedRef.current = { value: candidate, at: now };
+        setStatus(`SAP ID found: ${candidate}`);
+        onScanRef.current(candidate);
+      } else {
+        pendingRef.current = { value: candidate, at: now };
+        setStatus(`Read ${candidate} - confirming...`);
+      }
+    } catch (_err) {
+      setStatus('OCR error - retrying...');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
-  }, [busy, findTealStrip, preprocessForOcr, onScan]);
+  }, [videoRef]);
 
-  // ── 6. Auto-scan every 2 seconds ──
+  // Auto-scan continuously once camera and OCR are both ready.
   useEffect(() => {
-    if (!enabled) return;
-    scanTimerRef.current = setInterval(() => { captureAndRead(); }, 2000);
-    return () => clearInterval(scanTimerRef.current);
-  }, [enabled, captureAndRead]);
+    if (!enabled || !ready) return undefined;
+    const timer = setInterval(captureAndRead, SCAN_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [enabled, ready, captureAndRead]);
 
   if (!enabled) return null;
 
+  const shownError = error || cameraError;
+
   return (
     <div className="relative">
-      {error && (
-        <div className="mb-3 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
-          {error}
-        </div>
+      {shownError && (
+        <div className="mb-3 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">{shownError}</div>
       )}
 
       <div className="relative rounded-lg overflow-hidden bg-black">
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="w-full scanner-video"
-          style={{ maxHeight: '400px' }}
-        />
-
-        {/* Guide overlay — teal strip target */}
+        <video ref={videoRef} autoPlay playsInline muted className="w-full" style={{ maxHeight: '400px', objectFit: 'cover' }} />
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-72 h-16 border-2 border-yellow-400 rounded-lg mt-16 opacity-80 flex items-center justify-center">
             <span className="text-yellow-300 text-xs font-medium bg-black/50 px-2 py-0.5 rounded">
@@ -241,34 +193,45 @@ export default function OcrScanner({ onScan, enabled = true }) {
             </span>
           </div>
         </div>
-
         <div className="absolute bottom-4 left-0 right-0 text-center">
-          <span className="bg-black/60 text-white px-4 py-2 rounded-full text-sm">
-            {busy ? 'Reading...' : status}
-          </span>
+          <span className="bg-black/60 text-white px-4 py-2 rounded-full text-sm">{busy ? 'Reading...' : status}</span>
         </div>
       </div>
 
-      {/* Hidden canvas for capture */}
-      <canvas ref={canvasRef} className="hidden" />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {devices.length > 1 && (
+          <select
+            value={deviceId || devices[0]?.deviceId}
+            onChange={(event) => setDeviceId(event.target.value)}
+            className="min-w-0 flex-1 rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+            aria-label="Select camera"
+          >
+            {devices.map((device, index) => (
+              <option key={device.deviceId || index} value={device.deviceId}>
+                {device.label || `Camera ${index + 1}`}
+              </option>
+            ))}
+          </select>
+        )}
+        {torchSupported && (
+          <button
+            type="button"
+            onClick={() => setTorch(!torch)}
+            className={`rounded-lg border px-3 py-1.5 text-sm ${torch ? 'border-yellow-400 bg-yellow-100 text-yellow-800' : 'border-gray-300 text-gray-700'}`}
+          >
+            {torch ? 'Light on' : 'Light'}
+          </button>
+        )}
+      </div>
 
-      {/* Manual capture button */}
       <button
         onClick={captureAndRead}
         disabled={busy}
-        className="mt-4 w-full py-3 bg-yellow-500 text-white rounded-lg font-semibold hover:bg-yellow-600 disabled:opacity-60 transition-colors text-lg"
+        className="mt-3 w-full py-3 bg-yellow-500 text-white rounded-lg font-semibold hover:bg-yellow-600 disabled:opacity-60 transition-colors text-lg"
       >
-        {busy ? (
-          <span className="flex items-center justify-center gap-2">
-            <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-            Reading SAP ID...
-          </span>
-        ) : (
-          'Capture & Read SAP ID'
-        )}
+        {busy ? 'Reading SAP ID...' : 'Capture & Read SAP ID'}
       </button>
 
-      {/* Preview of what OCR sees */}
       {preview && (
         <div className="mt-3">
           <p className="text-xs text-gray-500 mb-1">Processed capture (what OCR sees):</p>

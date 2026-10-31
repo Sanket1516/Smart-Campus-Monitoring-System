@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './context/AuthContext';
@@ -20,6 +21,8 @@ import StudentManagement from './pages/StudentManagement';
 import TerminalSync from './pages/TerminalSync';
 import { ROLES } from './utils/rolePermissions';
 
+const Platform = lazy(() => import('./pages/Platform'));
+
 function PrivateRoute({ children }) {
   const { admin, loading } = useAuth();
   if (loading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
@@ -30,19 +33,20 @@ export default function App() {
   return (
     <>
       <Toaster position="top-right" />
+      <Suspense fallback={<div className="flex items-center justify-center h-screen">Loading...</div>}>
       <Routes>
+        <Route path="/" element={<Platform />} />
+        <Route path="/platform" element={<Platform />} />
         <Route path="/login" element={<Login />} />
         <Route path="/live" element={<PublicLiveDashboard />} />
         <Route path="/student/exit-request" element={<StudentExitRequest />} />
         <Route
-          path="/"
           element={
             <PrivateRoute>
               <Layout />
             </PrivateRoute>
           }
         >
-          <Route index element={<Navigate to="/dashboard" />} />
           <Route path="dashboard" element={
             <RoleRoute path="/dashboard">
               <Dashboard />
@@ -107,6 +111,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>
+      </Suspense>
     </>
   );
 }

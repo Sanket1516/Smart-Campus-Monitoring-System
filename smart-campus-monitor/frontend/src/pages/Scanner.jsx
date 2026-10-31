@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import BarcodeScanner from '../components/BarcodeScanner';
 import OcrScanner from '../components/OcrScanner';
+import PhoneBarcodeCapture from '../components/PhoneBarcodeCapture';
 import { createVisitorEntryApi, getVisitorEntriesApi, processScanApi } from '../services/api';
 import toast from 'react-hot-toast';
 import {
@@ -33,11 +34,42 @@ const AUDIO_FILES = {
   unauthorized: unauthorizedWarningUrl,
 };
 
+const STAGE_STATUS = {
+  verifying: { label: 'Verifying student...', tone: 'amber' },
+  entry: { label: 'Entry successful', tone: 'green' },
+  exit: { label: 'Exit successful', tone: 'green' },
+  duplicate: { label: 'Already recorded', tone: 'blue' },
+  notfound: { label: 'Student not found', tone: 'red' },
+  blocked: { label: 'Access denied', tone: 'red' },
+  error: { label: 'Scan failed', tone: 'red' },
+};
+
 export default function Scanner() {
-  const [scanning, setScanning] = useState(true);
+  const phoneScanUrl =
+    document.querySelector('meta[name="phone-scan-url"]')?.getAttribute('content') ||
+    `${window.location.origin}/scanner`;
+  // The camera (and its permission prompt) starts only after the guard has started it once;
+  // the choice is remembered so the gate laptop resumes scanning automatically afterwards.
+  const [scanning, setScanning] = useState(() => {
+    try {
+      return localStorage.getItem('scanner.cameraOn') === '1';
+    } catch (_e) {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('scanner.cameraOn', scanning ? '1' : '0');
+    } catch (_e) {
+      // storage unavailable: choice just is not remembered
+    }
+  }, [scanning]);
   const [mode, setMode] = useState('barcode'); // barcode | ocr
   const [lastScan, setLastScan] = useState(null);
+  const [lastBarcodeValue, setLastBarcodeValue] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [scanStage, setScanStage] = useState(null);
+  const processingRef = useRef(false);
   const [manualInput, setManualInput] = useState('');
   const [visitorForm, setVisitorForm] = useState(createInitialVisitorForm);
   const [addingVisitor, setAddingVisitor] = useState(false);
@@ -161,42 +193,63 @@ export default function Scanner() {
     setScanning(true);
   }, [unlockAudio]);
 
+  // Single entry point for every input method (camera barcode, OCR, manual): same backend call.
   const handleScan = useCallback(
     async (sapId) => {
-      if (processing) return;
-
+      if (processingRef.current) return;
+      processingRef.current = true;
       setProcessing(true);
+      setScanStage('verifying');
       try {
         const res = await processScanApi(sapId);
         setLastScan(res.data);
 
-        if (res.data.authorized) {
+        if (res.data.duplicate) {
+          setScanStage('duplicate');
+          toast(`${res.data.student.name} - already recorded a moment ago`);
+        } else if (res.data.authorized) {
           const isEntry = res.data.action === 'entry';
-          const action = isEntry ? 'ENTRY recorded' : 'EXIT recorded';
+          setScanStage(isEntry ? 'entry' : 'exit');
           await playSound(isEntry ? 'entry' : 'exit');
-          toast.success(`${res.data.student.name} - ${action}`);
+          toast.success(`${res.data.student.name} - ${isEntry ? 'ENTRY recorded' : 'EXIT recorded'}`);
         }
       } catch (err) {
         await playSound('unauthorized');
         if (err.response?.status === 404) {
+          setScanStage('notfound');
           setLastScan(err.response.data);
           toast.error('UNAUTHORIZED ID scanned!');
         } else if (err.response?.status === 403 && err.response?.data?.blocked) {
+          setScanStage('blocked');
           setLastScan(err.response.data);
           toast.error(
             err.response?.data?.blockReason
               ? `ACCESS DENIED: ${err.response.data.blockReason}`
               : 'ACCESS DENIED: Student is blocked'
           );
+        } else if (err.response?.status === 403) {
+          setScanStage('blocked');
+          setLastScan(err.response.data);
+          toast.error(err.response.data?.message || 'Access denied');
         } else {
+          setScanStage('error');
           toast.error('Scan failed: ' + (err.response?.data?.message || err.message));
         }
       } finally {
-        setTimeout(() => setProcessing(false), 2000);
+        // Short cooldown so one card held in front of the camera cannot be processed twice.
+        setTimeout(() => {
+          processingRef.current = false;
+          setProcessing(false);
+          setScanStage(null);
+        }, 2000);
       }
     },
-    [playSound, processing]
+    [playSound]
   );
+
+  // Camera barcode result -> same pipeline as manual entry.
+  const handleBarcodeDetected = useCallback(({ value }) => handleScan(value), [handleScan]);
+  const handleBarcodeValueRead = useCallback((value) => setLastBarcodeValue(String(value ?? '')), []);
 
   const handleManualSubmit = (e) => {
     e.preventDefault();
@@ -231,7 +284,7 @@ export default function Scanner() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Gate Scanner</h1>
-          <p className="text-gray-500">Scan student ID card barcode or printed number</p>
+          <p className="text-gray-500">Hold the student ID card in front of the camera - the barcode is read automatically</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-gray-100 rounded-lg p-1">
@@ -273,11 +326,11 @@ export default function Scanner() {
           >
             {scanning ? (
               <>
-                <HiOutlinePause className="w-5 h-5" /> Pause
+                <HiOutlinePause className="w-5 h-5" /> Stop camera
               </>
             ) : (
               <>
-                <HiOutlineCamera className="w-5 h-5" /> Start
+                <HiOutlineCamera className="w-5 h-5" /> Start camera
               </>
             )}
           </button>
@@ -286,15 +339,23 @@ export default function Scanner() {
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         {mode === 'barcode' ? (
-          <BarcodeScanner onScan={handleScan} enabled={scanning} />
+          <BarcodeScanner
+            onDetected={handleBarcodeDetected}
+            onValueRead={handleBarcodeValueRead}
+            enabled={scanning}
+            locked={processing}
+            statusOverride={scanStage ? STAGE_STATUS[scanStage] : null}
+            onStart={() => void enableScannerAudio()}
+          />
         ) : (
           <OcrScanner onScan={handleScan} enabled={scanning} />
         )}
-        {processing && (
-          <div className="mt-3 text-center text-primary-600 font-medium animate-pulse">
-            Processing scan...
-          </div>
-        )}
+        <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2" role="status" aria-live="polite">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Latest barcode value</span>
+          <code className="mt-1 block break-all text-base font-semibold text-gray-900">
+            {lastBarcodeValue || 'Waiting for a barcode…'}
+          </code>
+        </div>
         {!audioReady && (
           <p className="mt-3 text-center text-xs text-amber-600">
             Sound is preparing. If your browser blocks autoplay, your first tap anywhere will enable it.
@@ -308,6 +369,116 @@ export default function Scanner() {
           </p>
         )}
       </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div className="mb-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-900">
+          Phone link: <a className="font-semibold underline break-all" href={phoneScanUrl}>{phoneScanUrl}</a>
+          <span className="mt-1 block text-blue-800">Open over HTTPS on your phone, sign in, then tap Start camera once. Keep the barcode in frame while each scan is verified.</span>
+        </div>
+        <details className="rounded-lg border border-gray-200 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-gray-700">Optional photo fallback</summary>
+          <div className="mt-3">
+            <PhoneBarcodeCapture
+              onDetected={handleBarcodeDetected}
+              onValueRead={handleBarcodeValueRead}
+              disabled={processing}
+            />
+          </div>
+        </details>
+      </div>
+
+      {lastScan && (
+        <div
+          className={`rounded-xl shadow-sm border-2 p-6 ${
+            lastScan.authorized ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'
+          }`}
+        >
+          {lastScan.authorized ? (
+            <div className="flex items-start gap-4">
+              {lastScan.student.photoUrl ? (
+                <img
+                  src={lastScan.student.photoUrl}
+                  alt={`Photograph of ${lastScan.student.name}`}
+                  className="w-20 h-24 rounded-lg object-cover border border-green-300 flex-shrink-0"
+                />
+              ) : (
+                <HiOutlineCheckCircle className="w-12 h-12 text-green-600 flex-shrink-0" />
+              )}
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-2">
+                  <h3 className="text-xl font-bold text-green-800">{lastScan.student.name}</h3>
+                  {lastScan.duplicate && (
+                    <span className="px-3 py-1 rounded-full text-sm font-medium bg-sky-200 text-sky-800">
+                      Duplicate - not recorded again
+                    </span>
+                  )}
+                  <span
+                    className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      lastScan.action === 'entry'
+                        ? 'bg-green-200 text-green-800'
+                        : 'bg-blue-200 text-blue-800'
+                    }`}
+                  >
+                    {lastScan.action === 'entry' ? 'ENTRY' : 'EXIT'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm text-green-700">
+                  <p>
+                    <span className="font-medium">SAP ID:</span> {lastScan.student.sapId}
+                  </p>
+                  <p>
+                    <span className="font-medium">Category:</span>{' '}
+                    {getCategoryLabel(lastScan.student.category)}
+                  </p>
+                  <p>
+                    <span className="font-medium">Department:</span> {lastScan.student.department}
+                  </p>
+                  <p>
+                    <span className="font-medium">Year:</span> {lastScan.student.year}
+                  </p>
+                  {lastScan.log.entryTime && (
+                    <p>
+                      <span className="font-medium">Entry:</span>{' '}
+                      {new Date(lastScan.log.entryTime).toLocaleTimeString()}
+                    </p>
+                  )}
+                  {lastScan.log.exitTime && (
+                    <p>
+                      <span className="font-medium">Exit:</span>{' '}
+                      {new Date(lastScan.log.exitTime).toLocaleTimeString()}
+                    </p>
+                  )}
+                </div>
+                {lastScan.log.lateReturn && (
+                  <p className="mt-2 text-red-600 font-medium">Late return detected!</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4">
+              <HiOutlineExclamationCircle className="w-12 h-12 text-red-600 flex-shrink-0 animate-pulse" />
+              <div>
+                <h3 className="text-xl font-bold text-red-800">
+                  {lastScan.student ? 'ACCESS DENIED' : 'UNAUTHORIZED SCAN'}
+                </h3>
+                {lastScan.student && (
+                  <p className="text-red-700 mt-1 font-medium">
+                    {lastScan.student.name} ({lastScan.student.sapId})
+                  </p>
+                )}
+                {lastScan.scannedValue && (
+                  <p className="text-red-700 mt-1">
+                    Scanned value: <span className="font-mono font-bold">{lastScan.scannedValue}</span>
+                  </p>
+                )}
+                <p className="text-red-600 text-sm mt-1">
+                  {lastScan.message || 'This ID is not registered in the system. Admin has been notified.'}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         <h3 className="font-medium text-gray-700 mb-3">Manual Entry</h3>
@@ -482,76 +653,6 @@ export default function Scanner() {
         </div>
       </div>
 
-      {lastScan && (
-        <div
-          className={`rounded-xl shadow-sm border-2 p-6 ${
-            lastScan.authorized ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'
-          }`}
-        >
-          {lastScan.authorized ? (
-            <div className="flex items-start gap-4">
-              <HiOutlineCheckCircle className="w-12 h-12 text-green-600 flex-shrink-0" />
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="text-xl font-bold text-green-800">{lastScan.student.name}</h3>
-                  <span
-                    className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      lastScan.action === 'entry'
-                        ? 'bg-green-200 text-green-800'
-                        : 'bg-blue-200 text-blue-800'
-                    }`}
-                  >
-                    {lastScan.action === 'entry' ? 'ENTRY' : 'EXIT'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-sm text-green-700">
-                  <p>
-                    <span className="font-medium">SAP ID:</span> {lastScan.student.sapId}
-                  </p>
-                  <p>
-                    <span className="font-medium">Category:</span>{' '}
-                    {getCategoryLabel(lastScan.student.category)}
-                  </p>
-                  <p>
-                    <span className="font-medium">Department:</span> {lastScan.student.department}
-                  </p>
-                  <p>
-                    <span className="font-medium">Year:</span> {lastScan.student.year}
-                  </p>
-                  {lastScan.log.entryTime && (
-                    <p>
-                      <span className="font-medium">Entry:</span>{' '}
-                      {new Date(lastScan.log.entryTime).toLocaleTimeString()}
-                    </p>
-                  )}
-                  {lastScan.log.exitTime && (
-                    <p>
-                      <span className="font-medium">Exit:</span>{' '}
-                      {new Date(lastScan.log.exitTime).toLocaleTimeString()}
-                    </p>
-                  )}
-                </div>
-                {lastScan.log.lateReturn && (
-                  <p className="mt-2 text-red-600 font-medium">Late return detected!</p>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-4">
-              <HiOutlineExclamationCircle className="w-12 h-12 text-red-600 flex-shrink-0 animate-pulse" />
-              <div>
-                <h3 className="text-xl font-bold text-red-800">UNAUTHORIZED SCAN</h3>
-                <p className="text-red-700 mt-1">
-                  Scanned value: <span className="font-mono font-bold">{lastScan.scannedValue}</span>
-                </p>
-                <p className="text-red-600 text-sm mt-1">
-                  This ID is not registered in the system. Admin has been notified.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

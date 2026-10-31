@@ -5,7 +5,7 @@ WORKDIR /app
 
 COPY package.json package-lock.json* ./
 
-RUN npm install
+RUN npm ci --no-audit --no-fund --fetch-retries=2 --fetch-timeout=60000 --maxsockets=3
 
 COPY . .
 

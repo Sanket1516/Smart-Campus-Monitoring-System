@@ -8,6 +8,7 @@ backend/*.xls
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/certs/
 
 # OS
 .DS_Store
@@ -19,3 +20,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Microsoft Office temporary lock files
+~$*.docx
+
+# Demo (contains passwords)
+demo/demo-credentials.json
+demo/Demo_Credentials.docx
+backend/email-previews/

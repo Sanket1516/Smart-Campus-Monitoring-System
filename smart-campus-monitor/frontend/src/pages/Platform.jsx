@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import '../styles/sentinel.css';
 import { getPublicLiveDashboardApi } from '../services/api';
 import CampusStage from '../components/brand/CampusStage';
 import ArchitectureFlow from '../components/brand/ArchitectureFlow';

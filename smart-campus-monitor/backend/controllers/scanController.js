@@ -22,7 +22,7 @@ exports.processScan = async (req, res) => {
   try {
     const { sapId } = req.body;
 
-    if (!sapId) {
+    if (!sapId || typeof sapId !== 'string' || sapId.length > 40) {
       return res.status(400).json({ message: 'SAP ID is required' });
     }
 
@@ -164,6 +164,27 @@ exports.processScan = async (req, res) => {
 
     // IMPORTANT: Toggle must be based on the student's latest log overall, not only today's log.
     const lastLog = await EntryLog.findOne({ sapId }).sort({ createdAt: -1, _id: -1 });
+    // Server-side duplicate guard: a camera can report the same card several times in a row.
+    // A repeat within SCAN_DEDUPE_SECONDS of this student's last log is acknowledged but never recorded.
+    const dedupeMs = Number(process.env.SCAN_DEDUPE_SECONDS ?? 5) * 1000;
+    if (dedupeMs > 0 && lastLog?.createdAt && now - new Date(lastLog.createdAt) < dedupeMs) {
+      return res.json({
+        authorized: true,
+        duplicate: true,
+        action: String(lastLog.status).toLowerCase() === 'entered' ? 'entry' : 'exit',
+        message: 'Duplicate scan ignored',
+        student: {
+          sapId: student.sapId,
+          name: student.name,
+          category: student.category,
+          department: student.department,
+          year: student.year,
+          photoUrl: student.photoUrl,
+        },
+        log: { entryTime: lastLog.entryTime, exitTime: lastLog.exitTime, status: lastLog.status, lateReturn: lastLog.lateReturn },
+      });
+    }
+
     const normalizedLastStatus = String(lastLog?.status || '').trim().toLowerCase();
     const nextIsExit = normalizedLastStatus === 'entered' || normalizedLastStatus === 'in';
     const action = nextIsExit ? 'exit' : 'entry';
@@ -209,7 +230,7 @@ exports.processScan = async (req, res) => {
     });
 
     // Send parent notification (fire and forget)
-    notifyParent(student, action, now).catch((err) =>
+    notifyParent(student, action, now, { source: 'sap_scan', log }).catch((err) =>
       console.error('Notification error:', err.message)
     );
 
