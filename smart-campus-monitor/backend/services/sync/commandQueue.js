@@ -165,18 +165,25 @@ const cancelOpenCommands = async ({ student, types, terminalSN = null, reason = 
 };
 
 /** Render the exact text sent to the terminal (fills in template data at send time). */
-const renderForSend = async (command) => {
-  if (command.type !== 'TEMPLATE_WRITE') return command.text;
+const renderForSend = async (command) => (await renderWithMeta(command)).text;
+
+/** Rendered text plus non-secret metadata (finger, size, SHA-256) for logs. */
+const renderWithMeta = async (command) => {
+  if (command.type !== 'TEMPLATE_WRITE') return { text: command.text, meta: {} };
   const template = await loadTemplateValue(command.templateRef);
   if (!template) throw new Error('Referenced template no longer exists');
   const dialect = getDialect(command.dialect);
-  return dialect.writeTemplate({
+  const text = dialect.writeTemplate({
     ...command.params,
     fingerIndex: template.fingerIndex,
     flag: template.flag,
     template: template.value,
     size: undefined,
   });
+  return {
+    text,
+    meta: { fingerIndex: template.fingerIndex, sha256: template.sha256, sizeBytes: template.sizeBytes, sizeBase64: template.sizeBase64 },
+  };
 };
 
 /**
@@ -207,8 +214,8 @@ const takeNextCommands = async (terminalSN, { max, strictOrder, now = new Date()
     );
     if (!claimed) continue;
     try {
-      const text = await renderForSend(claimed);
-      out.push({ cmdId: claimed.cmdId, text, type: claimed.type, id: String(claimed._id) });
+      const { text, meta } = await renderWithMeta(claimed);
+      out.push({ cmdId: claimed.cmdId, text, type: claimed.type, id: String(claimed._id), pin: claimed.pin, attempts: claimed.attempts, meta });
       emitSyncCommand(commandSummary(claimed));
     } catch (error) {
       claimed.status = 'failed';

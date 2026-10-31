@@ -1,0 +1,5 @@
+# sidecar / pilot artefacts (may contain biometric data)
+smart-campus-monitor/sidecar/backups/
+smart-campus-monitor/sidecar/**/__pycache__/
+*.jsonl
+state-*.json

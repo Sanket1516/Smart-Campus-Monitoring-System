@@ -1,0 +1,5 @@
+# Internal service only (pyzk is GPL-2.0; this sidecar is not distributed).
+fastapi==0.115.6
+uvicorn==0.32.1
+pyzk==0.9
+cryptography==44.0.0
