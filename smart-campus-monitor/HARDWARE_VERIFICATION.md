@@ -25,6 +25,11 @@ measured result.
 | 16 | Does a full history upload happen on first handshake (`ATTLOGStamp=0`)? | punches are de-duplicated; punches older than `ADMS_REALTIME_WINDOW_SEC` are stored only | stamp 0 → device may upload everything once | Step 8: count `attlog` events after the first handshake |
 | 17 | Legacy templates (node-zklib `CMD_USERTEMP_RRQ`, 8-byte header stripped) are valid X990 templates | `scripts/migrateLegacyTemplates.js` | migrated as finger 0 | Restore one migrated template and verify a finger before relying on it |
 | 18 | pyzk works with the X990 firmware at all (packet size, `ZK_FORCE_UDP`) | `ZK_FORCE_UDP`, `ZK_TIMEOUT` | TCP | Step 1 |
+| 19 | Push read-back: does `DATA QUERY FINGERTMP PIN=..\tFID=..` make the gate upload the template? | `SYNC_PUSH_READBACK`, capability `template_readback_push` | queued after every template write | Hardware test 9/10: is there a gate `template_upload` after the query? If never, set `HARDWARE_CAPABILITIES={"template_readback_push":"unsupported"}` and use the sidecar for read-back |
+| 20 | Does the X990 menu refuse enrolling a finger that already belongs to another user? | — (backend only detects byte-identical templates) | — | Try enrolling the same finger under two user IDs on Device 1 |
+| 21 | Can a gate *disable* a user instead of deleting? | not used: block deletes from the gates and restores from the stored template | delete | Only if a supported disable command is found |
+| 22 | Pull mode (`zk_tcp_pull`): `get_attendance` record format and clock | `PULL_POLL_SECONDS`, sidecar `/attendance` | 30 s | Only for a unit that cannot push |
+| 23 | Is an ack (Return=0) reliable proof that the template is stored? | `SYNC_ACK_COUNTS_AS_VERIFIED` | false (read-back required) | Compare acks with sidecar read-back over the pilot; switch only with evidence |
 
 ## Facts implemented as given (not unknown)
 
