@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   HiOutlineSearch,
@@ -394,6 +394,16 @@ export default function StudentManagement() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState(createStudentForm());
   const [syncStudentId, setSyncStudentId] = useState(null);
+  const routeLocation = useLocation();
+
+  // Chatbot smart form filling: open the create modal pre-filled with the extracted fields.
+  useEffect(() => {
+    const prefill = routeLocation.state?.prefillStudent;
+    if (!prefill) return;
+    setCreateForm({ ...createStudentForm(), ...prefill });
+    setShowCreateModal(true);
+    navigate(routeLocation.pathname, { replace: true, state: null });
+  }, [routeLocation.state]);
 
   useEffect(() => {
     loadData();

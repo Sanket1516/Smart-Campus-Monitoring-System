@@ -3,6 +3,7 @@ const INTENTS = Object.freeze([
   'late_returns_today',
   'hostellers_outside',
   'unauthorized_today',
+  'students_inside_names',
   'unknown',
 ]);
 
@@ -17,7 +18,7 @@ const normalizeIntent = (raw) => {
 
   // Extract valid intent from any noisy model output.
   const matches = normalized.match(
-    /\b(total_inside|late_returns_today|hostellers_outside|unauthorized_today|unknown)\b/g
+    /\b(total_inside|late_returns_today|hostellers_outside|unauthorized_today|students_inside_names|unknown)\b/g
   );
 
   if (matches && matches.length > 0) {
@@ -51,6 +52,10 @@ const keywordClassifyIntent = (query) => {
     /\b(outside|out|not inside|away)\b/.test(q)
   ) {
     return 'hostellers_outside';
+  }
+
+  if (/\b(names?|list|who)\b/.test(q) && /\b(inside|in campus|present|students?)\b/.test(q)) {
+    return 'students_inside_names';
   }
 
   if (

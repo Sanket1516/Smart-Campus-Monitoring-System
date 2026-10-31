@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 const { isHosteller } = require('../utils/studentMeta');
 const { getEmailSenderName, shouldSendEntryExitEmail } = require('./configService');
+const { composeParentEmail } = require('./emailTemplates');
 
 let transporter = null;
 
@@ -22,7 +23,7 @@ const getTransporter = () => {
 /**
  * Send email notification to parent
  */
-const sendEmail = async ({ to, subject, text, html }) => {
+const sendEmail = async ({ to, subject, text, html, attachments }) => {
   try {
     const transport = getTransporter();
     const senderName = await getEmailSenderName();
@@ -34,6 +35,7 @@ const sendEmail = async ({ to, subject, text, html }) => {
       subject,
       text,
       html,
+      ...(attachments?.length ? { attachments } : {}),
     });
     console.log(`Email sent: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
@@ -80,9 +82,10 @@ const sendSMS = async ({ phone, message }) => {
 };
 
 /**
- * Notify parent about student entry/exit
+ * Notify parent about student entry/exit.
+ * `event` (optional) carries the real gate/terminal/verification details of this scan.
  */
-const notifyParent = async (student, action, timestamp) => {
+const notifyParent = async (student, action, timestamp, event = {}) => {
   const enabled = await shouldSendEntryExitEmail(action);
   if (!enabled) {
     return {
@@ -131,9 +134,15 @@ const notifyParent = async (student, action, timestamp) => {
 
   const results = { email: null, sms: null };
 
-  // Send email to parent
+  // Send email to parent: premium template, falling back to the basic one if rendering fails.
   if (student.parentEmail) {
-    results.email = await sendEmail({ to: student.parentEmail, subject, text, html });
+    let message = { subject, text, html };
+    try {
+      message = await composeParentEmail({ student, action, timestamp, event });
+    } catch (err) {
+      console.error('Email template error, using basic template:', err.message);
+    }
+    results.email = await sendEmail({ to: student.parentEmail, ...message, attachments: message.attachments });
   }
 
   // Send SMS to parent

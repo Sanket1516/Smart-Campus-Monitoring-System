@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { HiOutlineChatAlt2, HiOutlinePaperAirplane, HiOutlineX } from 'react-icons/hi';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { aiQueryApi } from '../services/api';
 
 const EXAMPLES = [
@@ -9,8 +11,11 @@ const EXAMPLES = [
   'Which hostellers are outside?',
   'Unauthorized attempts today?',
 ];
+const ADMIN_EXAMPLE = 'Add student Riya Shah, SAP 70552000201, riya@gmail.com, hosteller, engineering computer science year 2';
 
 export default function DashboardChatWidget() {
+  const navigate = useNavigate();
+  const { admin } = useAuth();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -18,7 +23,7 @@ export default function DashboardChatWidget() {
     {
       id: 'welcome',
       role: 'bot',
-      text: 'Ask me about inside count, late returns, hostellers outside, or unauthorized attempts.',
+      text: 'Ask me about inside count, late returns, hostellers outside, or unauthorized attempts. Admins can also paste student details and I will fill the registration form.',
     },
   ]);
 
@@ -36,11 +41,12 @@ export default function DashboardChatWidget() {
     setMessage('');
 
     try {
-      const response = await aiQueryApi(text);
+      const history = messages.filter((m) => m.id !== 'welcome').slice(-6).map(({ role, text: t }) => ({ role, text: t }));
+      const response = await aiQueryApi(text, history);
       const answer = response.data?.answer || 'I could not process that request right now.';
       setMessages((prev) => [
         ...prev,
-        { id: `b-${Date.now()}`, role: 'bot', text: answer },
+        { id: `b-${Date.now()}`, role: 'bot', text: answer, formFill: response.data?.formFill || null },
       ]);
     } catch (error) {
       const fallback =
@@ -63,7 +69,7 @@ export default function DashboardChatWidget() {
           <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
             <div>
               <p className="font-semibold text-gray-800">Campus AI Assistant</p>
-              <p className="text-xs text-gray-500">Intent-based monitoring queries</p>
+              <p className="text-xs text-gray-500">Powered by Gemini - queries and smart form filling</p>
             </div>
             <button
               type="button"
@@ -85,6 +91,17 @@ export default function DashboardChatWidget() {
                 }`}
               >
                 {item.text}
+                {item.formFill && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate('/admin/students', { state: { prefillStudent: item.formFill.fields } })
+                    }
+                    className="mt-2 block rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700"
+                  >
+                    Open pre-filled student form
+                  </button>
+                )}
               </div>
             ))}
             {loading && (
@@ -96,7 +113,7 @@ export default function DashboardChatWidget() {
 
           <div className="border-t border-gray-200 px-3 py-3">
             <div className="mb-2 flex flex-wrap gap-2">
-              {EXAMPLES.map((example) => (
+              {(admin?.role === 'admin' ? [...EXAMPLES, ADMIN_EXAMPLE] : EXAMPLES).map((example) => (
                 <button
                   key={example}
                   type="button"

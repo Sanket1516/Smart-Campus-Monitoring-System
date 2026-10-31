@@ -376,7 +376,7 @@ const processTerminalScanEvent = async ({
   }
 
   const wasOffline = !terminal.isOnline;
-  const { action, duplicate } = await processEntryExit(student, terminal, now);
+  const { action, duplicate, log: entryLog } = await processEntryExit(student, terminal, now);
 
   if (duplicate) {
     await markTerminalSeen(terminal, now, deviceName);
@@ -409,7 +409,7 @@ const processTerminalScanEvent = async ({
     await activeRequest.save();
   }
 
-  notifyParent(student, action, now).catch((error) => {
+  notifyParent(student, action, now, { source: 'terminal', verifyMode, terminal, log: entryLog }).catch((error) => {
     console.error('Fingerprint notification error:', error.message);
   });
 

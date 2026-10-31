@@ -9,7 +9,7 @@ const DEFAULT_CONFIGS = {
     curfewByHostel: {},
     defaultCurfewTime: '22:00',
     gracePeriodMinutes: 30,
-    emailSenderName: 'Smart Campus Monitoring System',
+    emailSenderName: 'Mukesh Patel School of Technology Management and Engineering',
   },
   academic_settings: {
     academicYear: '',
@@ -20,7 +20,7 @@ const DEFAULT_CONFIGS = {
     sapIdFormatRule: '',
   },
   system_configuration: {
-    collegeName: 'Smart Campus Monitoring System',
+    collegeName: 'Mukesh Patel School of Technology Management and Engineering',
     collegeLogo: '',
     cloudflareUrl: '',
     timezone: 'Asia/Kolkata',
