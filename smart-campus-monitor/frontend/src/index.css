@@ -257,6 +257,24 @@ html.dark .rounded-lg.bg-white {
   border: 1px solid var(--line);
 }
 
+html.dark .bg-primary-50,
+html.dark .bg-primary-100 {
+  background-color: rgba(61, 109, 255, 0.12) !important;
+}
+html.dark .text-primary-600,
+html.dark .text-primary-700,
+html.dark .text-primary-800 {
+  color: #a5c0ff !important;
+}
+html.dark .border-primary-100,
+html.dark .border-primary-200 {
+  border-color: rgba(61, 109, 255, 0.35) !important;
+}
+html.dark .dark\:bg-gray-700,
+html.dark .dark\:bg-slate-700 {
+  background-color: var(--ink-750) !important;
+}
+
 /* Status tints: pastel light-mode badges become restrained glows on dark */
 html.dark .bg-green-50,
 html.dark .bg-green-100,

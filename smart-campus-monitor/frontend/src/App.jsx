@@ -1,25 +1,26 @@
+import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import RoleRoute from './components/RoleRoute';
 import Login from './pages/Login';
-import Scanner from './pages/Scanner';
-import Dashboard from './pages/Dashboard';
-import StudentLogs from './pages/StudentLogs';
-import Analytics from './pages/Analytics';
-import Hostellers from './pages/Hostellers';
-import Settings from './pages/Settings';
-import Terminals from './pages/Terminals';
-import Enrollment from './pages/Enrollment';
-import AccessControl from './pages/AccessControl';
-import WardenPortal from './pages/WardenPortal';
-import StudentExitRequest from './pages/StudentExitRequest';
-import PublicLiveDashboard from './pages/PublicLiveDashboard';
-import StudentManagement from './pages/StudentManagement';
-import TerminalSync from './pages/TerminalSync';
-import Visitors from './pages/Visitors';
-import Platform from './pages/Platform';
+const Scanner = lazy(() => import('./pages/Scanner'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const StudentLogs = lazy(() => import('./pages/StudentLogs'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+const Hostellers = lazy(() => import('./pages/Hostellers'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Terminals = lazy(() => import('./pages/Terminals'));
+const Enrollment = lazy(() => import('./pages/Enrollment'));
+const AccessControl = lazy(() => import('./pages/AccessControl'));
+const WardenPortal = lazy(() => import('./pages/WardenPortal'));
+const StudentExitRequest = lazy(() => import('./pages/StudentExitRequest'));
+const PublicLiveDashboard = lazy(() => import('./pages/PublicLiveDashboard'));
+const StudentManagement = lazy(() => import('./pages/StudentManagement'));
+const TerminalSync = lazy(() => import('./pages/TerminalSync'));
+const Visitors = lazy(() => import('./pages/Visitors'));
+const Platform = lazy(() => import('./pages/Platform'));
 import { ROLES } from './utils/rolePermissions';
 
 function PrivateRoute({ children }) {
@@ -28,10 +29,20 @@ function PrivateRoute({ children }) {
   return admin ? children : <Navigate to="/login" />;
 }
 
+/** Route chunks load on demand; this is shown while one downloads. */
+function RouteLoader() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading">
+      <span className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-cyan-400" />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <>
       <Toaster position="top-right" />
+      <Suspense fallback={<RouteLoader />}>
       <Routes>
         <Route path="/" element={<Platform />} />
         <Route path="/platform" element={<Platform />} />
@@ -114,6 +125,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </>
   );
 }

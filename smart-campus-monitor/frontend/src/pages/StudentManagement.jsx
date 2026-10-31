@@ -18,6 +18,8 @@ import {
   getHostelsApi,
 } from '../services/api';
 import ExcelUploadModal from '../components/ExcelUploadModal';
+import PageHeader from '../components/brand/PageHeader';
+import { DEPARTMENT_OPTIONS } from '../utils/studentOptions';
 import FingerprintStatusBadge from '../components/sync/FingerprintStatusBadge';
 import { EnrollmentStateBadge, GateStatusBadge, SimulatedBadge, SyncStatusBadge, gateFor } from '../components/sync/SyncStatusBadges';
 import StudentSyncDrawer from '../components/sync/StudentSyncDrawer';
@@ -402,18 +404,43 @@ export default function StudentManagement() {
   const [createForm, setCreateForm] = useState(createStudentForm());
   const [syncStudentId, setSyncStudentId] = useState(null);
 
+  const [filters, setFilters] = useState({ department: '', year: '', studentType: '', fingerprintStatus: '', syncStatus: '', accessStatus: '' });
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ total: 0, pages: 1 });
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+
   useEffect(() => {
-    loadData();
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filters]);
+
+  useEffect(() => {
+    getHostelsApi()
+      .then((res) => setHostels(res.data.hostels || []))
+      .catch(() => toast.error('Failed to load hostels'));
   }, []);
 
+  useEffect(() => {
+    loadData();
+  }, [page, debouncedSearch, filters]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Server-side search, filters and pagination (the directory scales past one page). */
   const loadData = async () => {
     setLoading(true);
     try {
-      const [studentsRes, hostelsRes] = await Promise.all([getStudentsApi(), getHostelsApi()]);
+      const params = { page, limit: 50, ...(debouncedSearch ? { search: debouncedSearch } : {}) };
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params[key] = value;
+      });
+      const studentsRes = await getStudentsApi(params);
       setStudents(studentsRes.data.students || []);
-      setHostels(hostelsRes.data.hostels || []);
+      setMeta({ total: studentsRes.data.total || 0, pages: studentsRes.data.pages || 1 });
     } catch (_error) {
-      toast.error('Failed to load data');
+      toast.error('Failed to load students');
     } finally {
       setLoading(false);
     }
@@ -506,210 +533,245 @@ export default function StudentManagement() {
     }
   };
 
+  // Email search stays client-side on the loaded page (the API searches name and SAP ID).
   const filteredStudents = students.filter(
     (student) =>
+      !search ||
       student.name?.toLowerCase().includes(search.toLowerCase()) ||
       student.sapId?.toLowerCase().includes(search.toLowerCase()) ||
       student.email?.toLowerCase().includes(search.toLowerCase())
   );
+  const departmentOptions = Object.values(DEPARTMENT_OPTIONS).flat();
+  const activeFilters = Object.values(filters).filter(Boolean).length;
+  const setFilter = (key) => (event) => setFilters((current) => ({ ...current, [key]: event.target.value }));
+  const selectClass =
+    'rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-ink-100 outline-none focus:border-cyan-400/50';
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Student Management</h1>
-          <p className="text-gray-500 dark:text-gray-400">
-            Add students manually, upload via Excel, and keep enrollment-ready records in one place.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={openCreateModal}
-            className="flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-white transition-colors hover:bg-primary-700"
-          >
-            <HiOutlinePlus className="h-5 w-5" />
-            Add Student
-          </button>
-          <button
-            onClick={() => setShowUploadModal(true)}
-            className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white transition-colors hover:bg-green-700"
-          >
-            <HiOutlineUpload className="h-5 w-5" />
-            Upload Excel
-          </button>
-          <button
-            onClick={loadData}
-            className="flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-white transition-colors hover:bg-primary-700"
-          >
-            <HiOutlineRefresh className="h-5 w-5" />
-            Refresh
-          </button>
+      <PageHeader
+        eyebrow="Identity · Student directory"
+        title="Thousands of Records. One Organized System."
+        description="Every student, their enrolment and their status on both gate terminals. Add one student, or import a batch from Excel."
+        actions={
+          <>
+            <button type="button" onClick={openCreateModal} className="btn-accent">
+              <HiOutlinePlus className="h-4 w-4" /> Add student
+            </button>
+            <button type="button" onClick={() => setShowUploadModal(true)} className="btn-ghost">
+              <HiOutlineUpload className="h-4 w-4" /> Excel bulk import
+            </button>
+            <button type="button" onClick={loadData} className="btn-ghost" aria-label="Refresh">
+              <HiOutlineRefresh className="h-4 w-4" />
+            </button>
+          </>
+        }
+        aside={
+          <div className="text-right">
+            <div className="metric text-6xl text-white">{meta.total.toLocaleString('en-IN')}</div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-300">
+              {activeFilters || debouncedSearch ? 'matching students' : 'active students'}
+            </div>
+          </div>
+        }
+      />
+
+      <div className="panel p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative min-w-[240px] flex-1">
+            <HiOutlineSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+            <input
+              type="search"
+              placeholder="Search name or SAP ID…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search students"
+              className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2 pl-9 pr-3 text-sm text-white outline-none focus:border-cyan-400/50"
+            />
+          </div>
+          <select value={filters.department} onChange={setFilter('department')} className={selectClass} aria-label="Department">
+            <option value="">All departments</option>
+            {departmentOptions.map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+          <select value={filters.year} onChange={setFilter('year')} className={selectClass} aria-label="Year">
+            <option value="">All years</option>
+            {[1, 2, 3, 4, 5].map((y) => (
+              <option key={y} value={y}>
+                Year {y}
+              </option>
+            ))}
+          </select>
+          <select value={filters.studentType} onChange={setFilter('studentType')} className={selectClass} aria-label="Category">
+            <option value="">Day scholars & hostellers</option>
+            <option value="day_scholar">Day scholars</option>
+            <option value="hosteller">Hostellers</option>
+          </select>
+          <select value={filters.fingerprintStatus} onChange={setFilter('fingerprintStatus')} className={selectClass} aria-label="Enrolment">
+            <option value="">Any enrolment</option>
+            <option value="enrolled">Fingerprint enrolled</option>
+            <option value="awaiting">Awaiting fingerprint</option>
+            <option value="none">No fingerprint</option>
+          </select>
+          <select value={filters.syncStatus} onChange={setFilter('syncStatus')} className={selectClass} aria-label="Gate sync">
+            <option value="">Any gate sync</option>
+            <option value="FULLY_SYNCHRONIZED">Fully synchronised</option>
+            <option value="PARTIALLY_SYNCHRONIZED">Partially synchronised</option>
+            <option value="SYNCHRONIZED_UNVERIFIED">Stored, not verified</option>
+            <option value="PENDING">Pending</option>
+            <option value="FAILED">Failed</option>
+          </select>
+          <select value={filters.accessStatus} onChange={setFilter('accessStatus')} className={selectClass} aria-label="Access">
+            <option value="">Any access</option>
+            <option value="allowed">Active</option>
+            <option value="blocked">Blocked</option>
+          </select>
+          {activeFilters > 0 && (
+            <button
+              type="button"
+              className="text-xs text-cyan-300 hover:underline"
+              onClick={() => setFilters({ department: '', year: '', studentType: '', fingerprintStatus: '', syncStatus: '', accessStatus: '' })}
+            >
+              Clear {activeFilters} filter{activeFilters > 1 ? 's' : ''}
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1">
-          <HiOutlineSearch className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by name, SAP ID, or email..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-          />
-        </div>
-        <div className="text-sm text-gray-600 dark:text-gray-400">
-          {filteredStudents.length} student{filteredStudents.length !== 1 ? 's' : ''}
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="py-12 text-center">
-          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-primary-600" />
-          <p className="text-gray-600 dark:text-gray-400">Loading students...</p>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-lg bg-white shadow dark:bg-gray-800">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="border-b bg-gray-50 dark:border-gray-600 dark:bg-gray-700">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    SAP ID
+      <div className="panel overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1100px] text-sm">
+            <thead>
+              <tr className="border-b border-white/5 text-left font-mono text-[10px] uppercase tracking-[0.14em] text-ink-400">
+                {['Student', 'Programme', 'Category', 'ZK ID', 'Enrolment', 'Gate Entry', 'Gate Exit', 'Overall', 'Access', ''].map((h) => (
+                  <th key={h || 'actions'} className="whitespace-nowrap px-4 py-3 font-medium">
+                    {h}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Email
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Hostel
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Course
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Year
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    ZK user ID
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Fingerprint / enrolment
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Gate Entry
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Gate Exit
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Overall sync
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Access
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
-                {filteredStudents.map((student) => (
-                  <tr key={student._id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">
-                      {student.sapId}
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading &&
+                Array.from({ length: 6 }, (_, i) => (
+                  <tr key={`sk${i}`} className="border-t border-white/5">
+                    <td colSpan={10} className="px-4 py-4">
+                      <div className="h-4 w-full animate-pulse rounded bg-white/[0.04]" />
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                      {student.name}
+                  </tr>
+                ))}
+              {!loading &&
+                filteredStudents.map((student) => (
+                  <tr key={student._id} className="border-t border-white/5 transition-colors hover:bg-white/[0.025]">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-ink-600 to-ink-700 font-display text-xs font-semibold text-ink-100">
+                          {(student.name || '?')
+                            .split(' ')
+                            .map((part) => part[0])
+                            .slice(0, 2)
+                            .join('')}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-white">{student.name}</div>
+                          <div className="font-mono text-[11px] text-ink-400">{student.sapId}</div>
+                        </div>
+                      </div>
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                      {student.email}
+                    <td className="px-4 py-3 text-ink-200">
+                      <div className="capitalize">{student.department}</div>
+                      <div className="text-xs capitalize text-ink-400">
+                        {student.course} · Year {student.year || '—'}
+                      </div>
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm">
-                      <span
-                        className={`rounded-full px-2 py-1 text-xs font-medium ${
-                          student.studentType === 'hosteller'
-                            ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
-                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                        }`}
-                      >
-                        {student.studentType === 'hosteller' ? 'Hosteller' : 'Day Scholar'}
+                    <td className="px-4 py-3">
+                      <span className={student.studentType === 'hosteller' ? 'chip-info' : 'chip-off'}>
+                        {student.studentType === 'hosteller' ? 'Hosteller' : 'Day scholar'}
                       </span>
+                      {student.hostel?.name && <div className="mt-1 text-xs text-ink-400">{student.hostel.name}</div>}
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                      {student.hostel?.name || '-'}
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm capitalize text-gray-600 dark:text-gray-300">
-                      {student.course}
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                      Year {student.year || '-'}
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                      {student.zktUserID ?? '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm">
+                    <td className="px-4 py-3 font-mono text-xs text-ink-200">{student.zktUserID ?? '—'}</td>
+                    <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1">
                         <FingerprintStatusBadge status={student.fingerprintStatus} />
-                        {student.enrollmentState && student.enrollmentState !== 'idle' && student.enrollmentState !== 'captured' && (
+                        {student.enrollmentState && !['idle', 'captured'].includes(student.enrollmentState) && (
                           <EnrollmentStateBadge state={student.enrollmentState} />
                         )}
                         <SimulatedBadge show={student.enrollmentSimulated} />
                       </div>
                       {student.fingerprintEnrolledAt && (
-                        <div className="mt-1 text-xs text-gray-500">
+                        <div className="mt-1 font-mono text-[10px] text-ink-400">
                           {new Date(student.fingerprintEnrolledAt).toLocaleDateString('en-IN')} · {student.enrollmentDeviceSN || '—'}
                         </div>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm">
+                    <td className="px-4 py-3">
                       <GateStatusBadge gate={gateFor(student.gateSync, 'GATE_ENTRY')} />
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm">
+                    <td className="px-4 py-3">
                       <GateStatusBadge gate={gateFor(student.gateSync, 'GATE_EXIT')} />
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm">
+                    <td className="px-4 py-3">
                       <SyncStatusBadge status={student.syncStatus} />
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${student.accessStatus === 'blocked' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'}`}>
+                    <td className="px-4 py-3">
+                      <span className={student.accessStatus === 'blocked' ? 'chip-bad' : 'chip-ok'}>
                         {student.accessStatus === 'blocked' ? 'Blocked' : 'Active'}
                       </span>
                     </td>
-                    <td className="flex gap-2 whitespace-nowrap px-6 py-4 text-sm">
-                      <button
-                        onClick={() => setSyncStudentId(student._id)}
-                        className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-                      >
-                        Sync
-                      </button>
-                      <button
-                        onClick={() => handleEdit(student)}
-                        className="flex items-center gap-1 rounded bg-primary-600 px-3 py-1.5 text-white transition-colors hover:bg-primary-700"
-                      >
-                        <HiOutlinePencil className="h-4 w-4" />
-                        Edit
-                      </button>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSyncStudentId(student._id)}
+                          className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-ink-100 hover:border-cyan-400/40 hover:text-white"
+                        >
+                          Sync
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(student)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-ink-100 hover:border-cyan-400/40 hover:text-white"
+                        >
+                          <HiOutlinePencil className="h-3.5 w-3.5" /> Edit
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-
-          {filteredStudents.length === 0 && (
-            <div className="py-12 text-center">
-              <HiOutlineUserGroup className="mx-auto mb-4 h-12 w-12 text-gray-400" />
-              <p className="text-gray-600 dark:text-gray-400">No students found</p>
-            </div>
-          )}
+            </tbody>
+          </table>
         </div>
-      )}
+
+        {!loading && filteredStudents.length === 0 && (
+          <div className="py-14 text-center">
+            <HiOutlineUserGroup className="mx-auto mb-3 h-10 w-10 text-ink-500" />
+            <p className="text-ink-200">No students match.</p>
+            <p className="mt-1 text-xs text-ink-400">Adjust the search or filters, or add a student.</p>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 px-4 py-3 text-sm">
+          <span className="text-ink-400">
+            Page {page} of {meta.pages || 1} · {meta.total.toLocaleString('en-IN')} students
+          </span>
+          <div className="flex gap-2">
+            <button type="button" className="btn-ghost px-3 py-1.5" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>
+              Previous
+            </button>
+            <button
+              type="button"
+              className="btn-ghost px-3 py-1.5"
+              disabled={page >= (meta.pages || 1) || loading}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
 
       {editing && editForm && (
         <StudentModal

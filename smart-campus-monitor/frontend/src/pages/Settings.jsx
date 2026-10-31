@@ -455,11 +455,12 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-800">
-          <HiOutlineCog className="h-7 w-7" /> Settings
-        </h1>
-        <p className="text-gray-500">Hostel administration and staff management.</p>
+      <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
+      <div className="max-w-3xl">
+        <p className="eyebrow mb-3">System · Configuration</p>
+        <h1 className="display-md text-white">System Settings</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-200 md:text-base">Hostels, staff accounts, notifications, academic calendar and system configuration.</p>
+      </div>
       </div>
 
       <div className="flex flex-wrap gap-3">

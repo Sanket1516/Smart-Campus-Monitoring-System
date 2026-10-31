@@ -5,6 +5,18 @@ import { useAuth } from './AuthContext';
 
 const SocketContext = createContext(null);
 
+const STREAM_EVENT_TYPES = new Set([
+  'scan:live',
+  'scan:blocked',
+  'scan:unauthorized',
+  'scan:warden_required',
+  'terminal:online',
+  'terminal:offline',
+  'warden:new_request',
+  'warden:late_return',
+  'unknown:terminal',
+]);
+
 const LIVE_EVENT_TYPES = new Set([
   'scan:live',
   'scan:blocked',
@@ -62,6 +74,8 @@ export function SocketProvider({ children }) {
   const [connected, setConnected] = useState(false);
   const [socketError, setSocketError] = useState('');
   const [liveTickerItems, setLiveTickerItems] = useState([]);
+  // Structured real events for the command-centre stream (nothing is synthesised).
+  const [liveEvents, setLiveEvents] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [unreadAlerts, setUnreadAlerts] = useState(0);
 
@@ -147,6 +161,23 @@ export function SocketProvider({ children }) {
       eventNames.map((eventName) => [
         eventName,
         (payload) => {
+          if (STREAM_EVENT_TYPES.has(eventName)) {
+            setLiveEvents((current) =>
+              [
+                {
+                  id: `${eventName}-${Date.now()}-${Math.random()}`,
+                  eventName,
+                  type: payload?.type || null,
+                  studentName: payload?.studentName || '',
+                  sapId: payload?.sapId || '',
+                  label: payload?.terminalLabel || payload?.gateName || payload?.hostelName || payload?.deviceSN || '',
+                  detail: payload?.blockReason || payload?.reason || '',
+                  time: payload?.time || new Date().toISOString(),
+                },
+                ...current,
+              ].slice(0, 40)
+            );
+          }
           if (LIVE_EVENT_TYPES.has(eventName)) {
             setLiveTickerItems((current) => [
               { id: `${eventName}-${Date.now()}-${Math.random()}`, text: buildTickerItem(eventName, payload) },
@@ -191,12 +222,13 @@ export function SocketProvider({ children }) {
       connected,
       socketError,
       liveTickerItems,
+      liveEvents,
       alerts,
       unreadAlerts,
       refreshAlerts,
       markAlertsRead,
     }),
-    [connected, socketError, liveTickerItems, alerts, unreadAlerts]
+    [connected, socketError, liveTickerItems, liveEvents, alerts, unreadAlerts]
   );
 
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;

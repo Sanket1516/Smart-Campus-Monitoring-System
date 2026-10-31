@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   HiOutlineViewGrid,
@@ -364,7 +364,15 @@ export default function Layout() {
 
         <main className="flex-1 overflow-y-auto bg-gray-50 p-4 dark:bg-ink-900 md:p-6 xl:p-8">
           <div key={location.pathname} className="page-enter mx-auto max-w-[1600px]">
-            <Outlet />
+            <Suspense
+              fallback={
+                <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading">
+                  <span className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-cyan-400" />
+                </div>
+              }
+            >
+              <Outlet />
+            </Suspense>
           </div>
         </main>
         <LiveScanTicker />
