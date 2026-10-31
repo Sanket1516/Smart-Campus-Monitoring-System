@@ -17,6 +17,7 @@ const { storeTemplate } = require('../sync/templateStore');
 const { hasActiveConsent } = require('../sync/consentService');
 const { recordBiometricAudit } = require('../sync/biometricAudit');
 const { getSystemConfiguration } = require('../configService');
+const { pilotLog, terminalFields } = require('../pilot/pilotLog');
 const {
   emitTerminalOnline,
   emitUnknownTerminal,
@@ -100,6 +101,7 @@ const handleHandshake = async (terminal, query, ip) => {
   await markSeen(terminal, ip, extra);
   log(`handshake SN=${terminal.deviceSN} ip=${ip} pushver=${query.pushver || '-'} dialect=${terminal.dialect} query=${JSON.stringify(query).slice(0, 300)}`);
   await ensureDialectProbe(terminal);
+  pilotLog({ step: 'handshake', route: 'GET /iclock/cdata?options=all', ...terminalFields(terminal, ip), query: query });
   const { adms } = getSyncConfig();
   return protocol.buildHandshakeOptions({
     sn: terminal.deviceSN,
@@ -145,6 +147,18 @@ const handleAttlog = async (terminal, body) => {
         extra: record.extra,
       });
       results.inserted += 1;
+      pilotLog({
+        step: 'attlog',
+        route: 'POST /iclock/cdata?table=ATTLOG',
+        ...terminalFields(terminal),
+        user_id: record.pin,
+        device_time: record.time,
+        device_time_utc: deviceTime ? deviceTime.toISOString() : null,
+        server_received_utc: serverReceivedAt.toISOString(),
+        delivery_latency_ms: deviceTime ? serverReceivedAt - deviceTime : null,
+        status: record.status,
+        verify: record.verify,
+      });
     } catch (error) {
       if (Number(error?.code) === 11000) {
         results.duplicates += 1;
@@ -269,6 +283,19 @@ const handleOperations = async (terminal, table, body) => {
         algorithmVersion: terminal.algorithmVersion || '',
         actor: `terminal:${terminal.deviceSN}`,
       });
+      pilotLog({
+        step: 'template_upload',
+        route: `POST /iclock/cdata?table=${table}`,
+        ...terminalFields(terminal),
+        user_id: tpl.pin,
+        finger_index: tpl.fingerIndex,
+        template_size_reported: tpl.sizeReported,
+        template_size_bytes: stored.template?.sizeBytes,
+        template_size_base64: stored.template?.sizeBase64,
+        size_match: stored.sizeMatch,
+        sha256: stored.template?.sha256,
+        source_dialect: tpl.dialect,
+      });
       if (stored.changed) {
         results.stored += 1;
         const { onTemplateStored } = require('../sync/terminalSyncService');
@@ -316,6 +343,22 @@ const handleGetRequest = async (terminal, query, ip) => {
   const commands = await takeNextCommands(terminal.deviceSN);
   if (!commands.length) return 'OK';
   log(`getrequest SN=${terminal.deviceSN} sending ${commands.map((c) => `${c.cmdId}:${c.type}`).join(',')}`);
+  commands.forEach((command) =>
+    pilotLog({
+      step: 'command_sent',
+      route: 'GET /iclock/getrequest',
+      ...terminalFields(terminal, ip),
+      cmd_id: command.cmdId,
+      type: command.type,
+      attempt: command.attempts,
+      command: command.text,
+      user_id: command.pin,
+      finger_index: command.meta?.fingerIndex,
+      template_size_bytes: command.meta?.sizeBytes,
+      sha256: command.meta?.sha256,
+      commands_in_reply: commands.length,
+    })
+  );
   return protocol.formatCommandLines(commands);
 };
 
@@ -348,6 +391,20 @@ const handleDeviceCmd = async (terminal, body, ip) => {
   const out = [];
   for (const ack of acks) {
     const result = await applyAck({ terminalSN: terminal.deviceSN, id: ack.id, returnCode: ack.returnCode });
+    pilotLog({
+      step: 'command_ack',
+      route: 'POST /iclock/devicecmd',
+      ...terminalFields(terminal, ip),
+      cmd_id: ack.id,
+      cmd: ack.cmd,
+      result_code: ack.returnCode,
+      type: result.command?.type,
+      user_id: result.command?.pin,
+      finger_index: result.command?.params?.fingerIndex,
+      sha256: result.command?.params?.sha256,
+      ack_latency_ms: result.command?.sentAt ? Date.now() - new Date(result.command.sentAt).getTime() : null,
+      unknown: Boolean(result.unknown),
+    });
     if (result.unknown) {
       log(`ack for unknown command ${ack.id} from ${terminal.deviceSN}`);
       out.push({ id: ack.id, unknown: true });
