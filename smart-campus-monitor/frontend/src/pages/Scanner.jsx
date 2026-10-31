@@ -42,6 +42,7 @@ export default function Scanner() {
   const [visitorForm, setVisitorForm] = useState(createInitialVisitorForm);
   const [addingVisitor, setAddingVisitor] = useState(false);
   const [recentVisitors, setRecentVisitors] = useState([]);
+  const [recentScans, setRecentScans] = useState([]);
   const [audioReady, setAudioReady] = useState(false);
   const audioContextRef = useRef(null);
   const audioBuffersRef = useRef({});
@@ -161,23 +162,31 @@ export default function Scanner() {
     setScanning(true);
   }, [unlockAudio]);
 
-  const handleScan = useCallback(
-    async (sapId) => {
-      if (processing) return;
+  // Scans are queued and sent to the backend one at a time, so a fast sequence of
+  // different cards is never dropped while an earlier request is still in flight.
+  const scanQueueRef = useRef([]);
+  const queueBusyRef = useRef(false);
 
-      setProcessing(true);
+  const submitScan = useCallback(
+    async (sapId) => {
       try {
         const res = await processScanApi(sapId);
         setLastScan(res.data);
+        setRecentScans((current) =>
+          [{ sapId, at: Date.now(), ok: true, data: res.data }, ...current].slice(0, 8)
+        );
 
         if (res.data.authorized) {
           const isEntry = res.data.action === 'entry';
           const action = isEntry ? 'ENTRY recorded' : 'EXIT recorded';
-          await playSound(isEntry ? 'entry' : 'exit');
+          void playSound(isEntry ? 'entry' : 'exit');
           toast.success(`${res.data.student.name} - ${action}`);
         }
       } catch (err) {
-        await playSound('unauthorized');
+        void playSound('unauthorized');
+        setRecentScans((current) =>
+          [{ sapId, at: Date.now(), ok: false, data: err.response?.data }, ...current].slice(0, 8)
+        );
         if (err.response?.status === 404) {
           setLastScan(err.response.data);
           toast.error('UNAUTHORIZED ID scanned!');
@@ -188,14 +197,40 @@ export default function Scanner() {
               ? `ACCESS DENIED: ${err.response.data.blockReason}`
               : 'ACCESS DENIED: Student is blocked'
           );
+        } else if (err.response?.status === 403 && err.response?.data?.wardenRequired) {
+          toast.error(`${err.response.data.student?.name || sapId}: warden approval required`);
         } else {
           toast.error('Scan failed: ' + (err.response?.data?.message || err.message));
         }
-      } finally {
-        setTimeout(() => setProcessing(false), 2000);
       }
     },
-    [playSound, processing]
+    [playSound]
+  );
+
+  const drainQueue = useCallback(async () => {
+    if (queueBusyRef.current) return;
+    queueBusyRef.current = true;
+    setProcessing(true);
+    try {
+      while (scanQueueRef.current.length) {
+        const sapId = scanQueueRef.current[0];
+        await submitScan(sapId);
+        scanQueueRef.current.shift();
+      }
+    } finally {
+      queueBusyRef.current = false;
+      setProcessing(false);
+    }
+  }, [submitScan]);
+
+  const handleScan = useCallback(
+    (sapId) => {
+      // Ignore a value that is already waiting / being sent.
+      if (scanQueueRef.current.includes(sapId)) return;
+      scanQueueRef.current.push(sapId);
+      void drainQueue();
+    },
+    [drainQueue]
   );
 
   const handleManualSubmit = (e) => {
@@ -295,6 +330,39 @@ export default function Scanner() {
             Processing scan...
           </div>
         )}
+        {recentScans.length > 0 && (
+          <div className="mt-3">
+            <p className="text-xs font-medium text-gray-500 mb-1">Recent scans</p>
+            <ul className="divide-y divide-gray-100 text-sm">
+              {recentScans.map((scan) => (
+                <li key={`${scan.sapId}-${scan.at}`} className="flex items-center justify-between py-1">
+                  <span className="font-mono">{scan.sapId}</span>
+                  <span className="truncate px-2 text-gray-600">
+                    {scan.data?.student?.name || ''}
+                  </span>
+                  <span
+                    className={`text-xs font-semibold ${
+                      scan.ok && scan.data?.authorized
+                        ? scan.data.action === 'entry'
+                          ? 'text-green-700'
+                          : 'text-blue-700'
+                        : 'text-red-700'
+                    }`}
+                  >
+                    {scan.ok && scan.data?.authorized
+                      ? scan.data.action === 'entry'
+                        ? 'ENTRY'
+                        : 'EXIT'
+                      : 'DENIED'}{' '}
+                    <span className="text-gray-400 font-normal">
+                      {new Date(scan.at).toLocaleTimeString()}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {!audioReady && (
           <p className="mt-3 text-center text-xs text-amber-600">
             Sound is preparing. If your browser blocks autoplay, your first tap anywhere will enable it.
@@ -321,7 +389,6 @@ export default function Scanner() {
           />
           <button
             type="submit"
-            disabled={processing}
             className="px-6 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-60"
           >
             Submit

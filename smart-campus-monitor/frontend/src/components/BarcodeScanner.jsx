@@ -14,7 +14,15 @@ const SUPPORTED_BARCODE_FORMATS = [
   Html5QrcodeSupportedFormats.QR_CODE,
 ];
 
-const SCAN_COOLDOWN_MS = 2000;
+// Continuous "barcode reader" behaviour:
+//  - A NEW code is accepted as soon as it is read twice in a row (filters 1D misreads).
+//  - The SAME code is not re-submitted while the card stays in front of the camera.
+//    It is accepted again only after it has left the frame for ABSENCE_RESET_MS and
+//    at least SAME_CODE_REPEAT_MS has passed (prevents an accidental entry->exit toggle).
+const CONFIRM_WINDOW_MS = 1500;
+const ABSENCE_RESET_MS = 1200;
+const SAME_CODE_REPEAT_MS = 5000;
+const FLASH_MS = 600;
 
 function normalizeDecodedValue(decodedText) {
   if (!decodedText) return null;
@@ -30,13 +38,18 @@ export default function BarcodeScanner({ onScan, enabled = true }) {
   const scannerRef = useRef(null);
   const onScanRef = useRef(onScan);
   const elementIdRef = useRef(`barcode-scanner-${Math.random().toString(36).slice(2)}`);
-  const lastAcceptedValueRef = useRef('');
-  const lastAcceptedAtRef = useRef(0);
+  const candidateRef = useRef({ value: '', at: 0 });
+  const lastSeenRef = useRef(new Map()); // value -> last time it was decoded
+  const lastAcceptedRef = useRef(new Map()); // value -> last time it was submitted
+  const flashTimerRef = useRef(null);
   const [error, setError] = useState('');
+  const [flashValue, setFlashValue] = useState('');
 
   useEffect(() => {
     onScanRef.current = onScan;
   }, [onScan]);
+
+  useEffect(() => () => clearTimeout(flashTimerRef.current), []);
 
   useEffect(() => {
     const stopScanner = async () => {
@@ -67,83 +80,134 @@ export default function BarcodeScanner({ onScan, enabled = true }) {
 
     let active = true;
 
-    const startScanner = async () => {
-      try {
-        const cameras = await Html5Qrcode.getCameras();
-        if (!active) return;
+    const handleDecoded = (decodedText) => {
+      if (!active) return;
 
-        if (!cameras.length) {
-          setError('No camera found. Please connect a webcam or use a mobile device camera.');
+      const value = normalizeDecodedValue(decodedText);
+      if (!value) return;
+
+      const now = Date.now();
+      const previouslySeenAt = lastSeenRef.current.get(value) || 0;
+      lastSeenRef.current.set(value, now);
+
+      // Require two matching reads in quick succession before accepting.
+      const candidate = candidateRef.current;
+      if (candidate.value !== value || now - candidate.at > CONFIRM_WINDOW_MS) {
+        candidateRef.current = { value, at: now };
+        return;
+      }
+      candidateRef.current = { value, at: now };
+
+      const acceptedAt = lastAcceptedRef.current.get(value);
+      if (acceptedAt) {
+        const cardWasRemoved = now - previouslySeenAt > ABSENCE_RESET_MS;
+        if (!cardWasRemoved || now - acceptedAt < SAME_CODE_REPEAT_MS) {
           return;
         }
+      }
 
-        const preferredCamera =
-          cameras.find((camera) => /back|rear|environment/i.test(`${camera.label} ${camera.id}`)) ||
-          cameras[0];
+      lastAcceptedRef.current.set(value, now);
 
+      // Keep the maps small.
+      for (const [key, at] of lastSeenRef.current) {
+        if (now - at > 60000) {
+          lastSeenRef.current.delete(key);
+          lastAcceptedRef.current.delete(key);
+        }
+      }
+
+      setError('');
+      setFlashValue(value);
+      clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = setTimeout(() => setFlashValue(''), FLASH_MS);
+
+      try {
+        navigator.vibrate?.(80);
+      } catch {
+        /* vibration not supported */
+      }
+
+      onScanRef.current(value);
+    };
+
+    const handleScanFailure = (scanErrorMessage) => {
+      if (
+        scanErrorMessage &&
+        !/No MultiFormat Readers were able to detect|No barcode or QR code detected|NotFoundException/i.test(
+          scanErrorMessage
+        )
+      ) {
+        console.warn('Scanner warning:', scanErrorMessage);
+      }
+    };
+
+    const scanConfig = {
+      fps: 12,
+      disableFlip: false,
+      formatsToSupport: SUPPORTED_BARCODE_FORMATS,
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true,
+      },
+      qrbox: (viewfinderWidth, viewfinderHeight) => ({
+        width: Math.max(150, Math.min(Math.floor(viewfinderWidth * 0.85), 360)),
+        height: Math.max(100, Math.min(Math.floor(viewfinderHeight * 0.5), 220)),
+      }),
+    };
+
+    const startScanner = async () => {
+      try {
         const scanner = new Html5Qrcode(elementIdRef.current, {
           verbose: false,
+          formatsToSupport: SUPPORTED_BARCODE_FORMATS,
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
         });
         scannerRef.current = scanner;
 
-        await scanner.start(
-          preferredCamera.id,
-          {
-            fps: 10,
-            disableFlip: false,
-            formatsToSupport: SUPPORTED_BARCODE_FORMATS,
-            experimentalFeatures: {
-              useBarCodeDetectorIfSupported: true,
-            },
-            qrbox: (viewfinderWidth, viewfinderHeight) => ({
-              width: Math.min(Math.floor(viewfinderWidth * 0.8), 320),
-              height: Math.min(Math.floor(viewfinderHeight * 0.35), 160),
-            }),
-          },
-          (decodedText) => {
-            const value = normalizeDecodedValue(decodedText);
-            const now = Date.now();
+        try {
+          // Rear camera via facingMode is the most reliable choice on phones.
+          await scanner.start(
+            { facingMode: 'environment' },
+            scanConfig,
+            handleDecoded,
+            handleScanFailure
+          );
+        } catch (facingModeError) {
+          if (!active) return;
+          console.warn('facingMode start failed, falling back to camera list:', facingModeError);
 
-            if (!value) {
-              return;
-            }
+          const cameras = await Html5Qrcode.getCameras();
+          if (!active) return;
 
-            if (now - lastAcceptedAtRef.current < SCAN_COOLDOWN_MS) {
-              return;
-            }
-
-            if (
-              value === lastAcceptedValueRef.current &&
-              now - lastAcceptedAtRef.current < SCAN_COOLDOWN_MS * 2
-            ) {
-              return;
-            }
-
-            if (active) {
-              lastAcceptedValueRef.current = value;
-              lastAcceptedAtRef.current = now;
-              setError('');
-              onScanRef.current(value);
-            }
-          },
-          (scanErrorMessage) => {
-            if (
-              scanErrorMessage &&
-              !/No MultiFormat Readers were able to detect|No barcode or QR code detected/i.test(scanErrorMessage)
-            ) {
-              console.warn('Scanner warning:', scanErrorMessage);
-            }
+          if (!cameras.length) {
+            setError('No camera found. Please connect a webcam or use a mobile device camera.');
+            return;
           }
-        );
 
-        if (active) {
-          setError('');
+          const preferredCamera =
+            cameras.find((camera) => /back|rear|environment/i.test(`${camera.label} ${camera.id}`)) ||
+            cameras[cameras.length - 1];
+
+          await scanner.start(preferredCamera.id, scanConfig, handleDecoded, handleScanFailure);
         }
+
+        if (!active) {
+          void stopScanner();
+          return;
+        }
+
+        // Continuous autofocus so cards at different distances stay readable.
+        try {
+          await scanner.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' }] });
+        } catch {
+          /* not supported on this device - ignore */
+        }
+
+        setError('');
       } catch (err) {
         if (!active) return;
 
         console.error('Camera error:', err);
-        const message = err?.message || 'Unable to start the camera.';
+        const message = err?.message || String(err || 'Unable to start the camera.');
         if (err?.name === 'NotAllowedError' || /permission|denied/i.test(message)) {
           setError('Camera access denied. Please allow camera access in your browser settings.');
         } else {
@@ -183,7 +247,11 @@ export default function BarcodeScanner({ onScan, enabled = true }) {
             style={{ minHeight: '300px', maxHeight: '400px' }}
           />
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="relative w-64 h-40 border-2 border-green-400 rounded-lg opacity-70">
+            <div
+              className={`relative w-64 h-40 border-2 rounded-lg transition-colors duration-150 ${
+                flashValue ? 'border-green-300 bg-green-400/30 opacity-100' : 'border-green-400 opacity-70'
+              }`}
+            >
               <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-green-400 rounded-tl" />
               <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-green-400 rounded-tr" />
               <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-green-400 rounded-bl" />
@@ -192,7 +260,7 @@ export default function BarcodeScanner({ onScan, enabled = true }) {
           </div>
           <div className="absolute bottom-4 left-0 right-0 text-center pointer-events-none">
             <span className="bg-black/60 text-white px-4 py-2 rounded-full text-sm">
-              Position barcode within the frame
+              {flashValue ? `Read: ${flashValue}` : 'Scanning continuously - show the next card'}
             </span>
           </div>
         </div>
