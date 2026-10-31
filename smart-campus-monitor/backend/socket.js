@@ -49,6 +49,10 @@ const attachSocketServer = (httpServer) => {
     const adminId = socket.user?.id;
     const role = socket.user?.role;
 
+    // Only authenticated staff receive identifiable events; everyone else gets the
+    // anonymised public feed (see services/socketService.js).
+    socket.join(socket.user ? 'staff' : 'public');
+
     if (adminId && role === 'warden') {
       socket.join(`warden:${adminId}`);
     }

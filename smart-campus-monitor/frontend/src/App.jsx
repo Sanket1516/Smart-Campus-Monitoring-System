@@ -18,6 +18,8 @@ import StudentExitRequest from './pages/StudentExitRequest';
 import PublicLiveDashboard from './pages/PublicLiveDashboard';
 import StudentManagement from './pages/StudentManagement';
 import TerminalSync from './pages/TerminalSync';
+import Visitors from './pages/Visitors';
+import Platform from './pages/Platform';
 import { ROLES } from './utils/rolePermissions';
 
 function PrivateRoute({ children }) {
@@ -31,18 +33,18 @@ export default function App() {
     <>
       <Toaster position="top-right" />
       <Routes>
+        <Route path="/" element={<Platform />} />
+        <Route path="/platform" element={<Platform />} />
         <Route path="/login" element={<Login />} />
         <Route path="/live" element={<PublicLiveDashboard />} />
         <Route path="/student/exit-request" element={<StudentExitRequest />} />
         <Route
-          path="/"
           element={
             <PrivateRoute>
               <Layout />
             </PrivateRoute>
           }
         >
-          <Route index element={<Navigate to="/dashboard" />} />
           <Route path="dashboard" element={
             <RoleRoute path="/dashboard">
               <Dashboard />
@@ -98,6 +100,11 @@ export default function App() {
               <TerminalSync />
             </RoleRoute>
           } />
+          <Route path="visitors" element={
+            <RoleRoute path="/visitors">
+              <Visitors />
+            </RoleRoute>
+          } />
           <Route path="settings" element={<Navigate to="/admin/settings" replace />} />
           <Route path="admin/settings" element={
             <RoleRoute path="/admin/settings" requiredRoles={[ROLES.ADMIN]}>
@@ -105,7 +112,7 @@ export default function App() {
             </RoleRoute>
           } />
         </Route>
-        <Route path="*" element={<Navigate to="/dashboard" />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );

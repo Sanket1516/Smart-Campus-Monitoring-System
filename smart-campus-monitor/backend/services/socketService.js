@@ -26,12 +26,40 @@ const setIo = (io) => {
 
 const getIo = () => ioInstance;
 
+// Authenticated staff sockets join STAFF_ROOM; anonymous sockets (public live screen)
+// join PUBLIC_ROOM and only ever receive anonymised `public:activity` events.
+const STAFF_ROOM = 'staff';
+const PUBLIC_ROOM = 'public';
+
+const PUBLIC_EVENT_TYPES = {
+  'scan:live': (payload) => (payload?.type === 'exit' ? 'exit' : 'entry'),
+  'scan:blocked': () => 'blocked',
+  'scan:unauthorized': () => 'unauthorized',
+  'terminal:online': () => 'terminal_online',
+  'terminal:offline': () => 'terminal_offline',
+};
+
+/** Strip everything that could identify a student. */
+const toPublicActivity = (eventName, payload = {}) => ({
+  eventType: PUBLIC_EVENT_TYPES[eventName](payload),
+  gateName: payload.gateName || '',
+  gateNumber: payload.gateNumber ?? null,
+  terminalNumber: payload.terminalNumber ?? null,
+  terminalLabel: payload.terminalLabel || '',
+  machineNumber: payload.machineNumber ?? null,
+  time: payload.time || new Date().toISOString(),
+});
+
 const emit = (eventName, payload) => {
   if (!ioInstance) {
     return false;
   }
 
-  ioInstance.emit(eventName, payload);
+  ioInstance.to(STAFF_ROOM).emit(eventName, payload);
+
+  if (PUBLIC_EVENT_TYPES[eventName]) {
+    ioInstance.to(PUBLIC_ROOM).emit('public:activity', toPublicActivity(eventName, payload));
+  }
   return true;
 };
 
@@ -64,6 +92,9 @@ const emitSyncAlert = (payload) => emit(EVENTS.syncAlert, payload);
 const emitSyncReconcile = (payload) => emit(EVENTS.syncReconcile, payload);
 
 module.exports = {
+  STAFF_ROOM,
+  PUBLIC_ROOM,
+  toPublicActivity,
   EVENTS,
   setIo,
   getIo,

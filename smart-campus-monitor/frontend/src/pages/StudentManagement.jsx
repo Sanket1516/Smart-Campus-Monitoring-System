@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   HiOutlineSearch,
@@ -385,7 +385,14 @@ export default function StudentManagement() {
   const [students, setStudents] = useState([]);
   const [hostels, setHostels] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const location = useLocation();
+  const [search, setSearch] = useState(() => new URLSearchParams(location.search).get('search') || '');
+
+  // Global search in the top bar navigates here with ?search=<SAP ID>.
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(location.search).get('search');
+    if (fromUrl !== null) setSearch(fromUrl);
+  }, [location.search]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);

@@ -10,6 +10,7 @@ export const ROUTE_PERMISSIONS = {
   '/dashboard': [ROLES.ADMIN, ROLES.WARDEN, ROLES.SECURITY],
   '/scanner': [ROLES.ADMIN, ROLES.SECURITY],
   '/logs': [ROLES.ADMIN, ROLES.WARDEN, ROLES.SECURITY],
+  '/visitors': [ROLES.ADMIN, ROLES.SECURITY],
   '/analytics': [ROLES.ADMIN, ROLES.WARDEN],
   '/hostellers': [ROLES.ADMIN, ROLES.WARDEN],
   '/admin/students': [ROLES.ADMIN],
