@@ -667,7 +667,7 @@ export default function StudentManagement() {
                   <tr key={student._id} className="border-t border-white/5 transition-colors hover:bg-white/[0.025]">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-ink-600 to-ink-700 font-display text-xs font-semibold text-ink-100">
+                        <div className="keep-dark flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-ink-600 to-ink-700 font-display text-xs font-semibold text-ink-100">
                           {(student.name || '?')
                             .split(' ')
                             .map((part) => part[0])

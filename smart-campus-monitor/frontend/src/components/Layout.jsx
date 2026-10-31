@@ -13,8 +13,6 @@ import {
   HiOutlineLogout,
   HiOutlineMenu,
   HiOutlineX,
-  HiOutlineMoon,
-  HiOutlineSun,
   HiOutlineUsers,
   HiOutlineStatusOnline,
   HiOutlineGlobe,
@@ -22,6 +20,8 @@ import {
   HiOutlineHome,
   HiOutlineSearch,
   HiOutlineExternalLink,
+  HiOutlineMoon,
+  HiOutlineSun,
 } from 'react-icons/hi';
 import { useAuth } from '../context/AuthContext';
 import AlertBell from './AlertBell';
@@ -220,10 +220,6 @@ export default function Layout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [campusName, setCampusName] = useState('');
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    return window.localStorage.getItem('smart-campus-theme') !== 'light';
-  });
 
   const groups = useMemo(
     () =>
@@ -233,9 +229,22 @@ export default function Layout() {
     [admin?.role]
   );
 
+  // Dark command-centre theme by default; light mode keeps the dark shell (sidebar + top bar)
+  // and switches the content area to light surfaces.
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      return window.localStorage.getItem('smart-campus-theme') !== 'light';
+    } catch (_error) {
+      return true;
+    }
+  });
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
-    window.localStorage.setItem('smart-campus-theme', darkMode ? 'dark' : 'light');
+    try {
+      window.localStorage.setItem('smart-campus-theme', darkMode ? 'dark' : 'light');
+    } catch (_error) {
+      /* storage unavailable */
+    }
   }, [darkMode]);
 
   useEffect(() => {
@@ -324,7 +333,7 @@ export default function Layout() {
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex items-center gap-3 border-b border-white/5 bg-ink-900/80 px-4 py-3 backdrop-blur-xl md:px-6">
+        <header className="flex items-center gap-3 border-b border-white/5 bg-ink-900 px-4 py-3 md:px-6">
           <button
             className="rounded-lg p-1.5 text-ink-200 hover:bg-white/5 lg:hidden"
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -336,7 +345,7 @@ export default function Layout() {
             <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400">Campus</div>
             <div className="truncate font-display text-sm font-semibold text-white md:text-base">{campusName || 'Smart Campus'}</div>
           </div>
-          <div className="mx-auto w-full max-w-sm px-2">
+          <div className="mx-auto hidden w-full max-w-sm px-2 md:block">
             <GlobalSearch role={admin?.role} />
           </div>
           <div className="ml-auto flex items-center gap-2 md:gap-3">
@@ -354,15 +363,15 @@ export default function Layout() {
               type="button"
               onClick={() => setDarkMode((current) => !current)}
               className="rounded-lg p-2 text-ink-300 hover:bg-white/5 hover:text-white"
-              title={darkMode ? 'Light theme' : 'Command-centre (dark) theme'}
-              aria-label="Toggle theme"
+              title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {darkMode ? <HiOutlineSun className="h-5 w-5" /> : <HiOutlineMoon className="h-5 w-5" />}
             </button>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto bg-gray-50 p-4 dark:bg-ink-900 md:p-6 xl:p-8">
+        <main className={`flex-1 overflow-y-auto bg-gray-50 p-4 dark:bg-ink-900 md:p-6 xl:p-8 ${darkMode ? '' : 'light-scope'}`}>
           <div key={location.pathname} className="page-enter mx-auto max-w-[1600px]">
             <Suspense
               fallback={

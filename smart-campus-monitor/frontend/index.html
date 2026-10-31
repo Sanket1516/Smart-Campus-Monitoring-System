@@ -11,14 +11,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <title>Sentinel · Smart Campus Security</title>
     <script>
-      // Dark command-centre theme by default; respect an explicit saved choice.
+      // Dark command-centre theme by default; respect a saved light choice (set before first paint).
       (function () {
+        var light = false;
         try {
-          var saved = localStorage.getItem('smart-campus-theme');
-          if (saved !== 'light') document.documentElement.classList.add('dark');
-        } catch (e) {
-          document.documentElement.classList.add('dark');
-        }
+          light = localStorage.getItem('smart-campus-theme') === 'light';
+        } catch (e) {}
+        if (!light) document.documentElement.classList.add('dark');
       })();
     </script>
   </head>

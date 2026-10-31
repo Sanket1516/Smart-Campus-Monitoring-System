@@ -228,7 +228,7 @@ export default function Scanner() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3 relative overflow-hidden rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
+      <div className="flex items-center justify-between flex-wrap gap-3 relative overflow-hidden keep-dark rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
         <div className="max-w-3xl">
           <p className="eyebrow mb-3">Operations · Manual fallback</p>
           <h1 className="display-md text-white">Gate Scanner</h1>

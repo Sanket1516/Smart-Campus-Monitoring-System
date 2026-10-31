@@ -110,7 +110,7 @@ function GateTopology({ terminals }) {
   ];
   return (
     <section className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-[1.5fr_1fr_1fr]">
-      <div className="panel p-5 lg:col-span-2 2xl:col-span-1">
+      <div className="panel hidden p-5 sm:block lg:col-span-2 2xl:col-span-1">
         <div className="mb-2 flex items-center justify-between">
           <p className="eyebrow">Enrolment → gate topology</p>
           <span className="font-mono text-[10px] text-ink-400">live status</span>

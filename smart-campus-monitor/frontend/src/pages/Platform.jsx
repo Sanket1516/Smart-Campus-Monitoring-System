@@ -56,8 +56,8 @@ function useLiveSnapshot() {
 
 function HudCard({ label, value, tone = 'text-white', className = '' }) {
   return (
-    <div className={`panel px-4 py-3 ${className}`}>
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-300">{label}</div>
+    <div className={`panel min-w-0 px-3 py-3 sm:px-4 ${className}`}>
+      <div className="break-words font-mono text-[10px] uppercase tracking-[0.1em] text-ink-300 sm:tracking-[0.18em]">{label}</div>
       <div className={`metric mt-1 text-2xl ${tone}`}>{value}</div>
     </div>
   );

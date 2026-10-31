@@ -41,7 +41,7 @@ export default function Hostellers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4 relative overflow-hidden rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
+      <div className="flex items-center justify-between flex-wrap gap-4 relative overflow-hidden keep-dark rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
         <div className="max-w-3xl">
           <p className="eyebrow mb-3">Safety · Hosteller monitoring</p>
           <h1 className="display-md text-white">Student Safety Beyond the Campus Gate.</h1>
