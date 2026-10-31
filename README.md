@@ -1202,6 +1202,26 @@ without an ack. After 3 attempts it is marked failed and an alert is raised.
    **Student Management** (fingerprint badge and per-student *Sync* drawer) and
    **Enrollment** (enrol-once flow).
 
+### Three-device setup (Device 1 enrolment, Device 2 entry, Device 3 exit)
+
+| Device | Role | Responsibility |
+|---|---|---|
+| Device 1 | `ADMIN_ENROLLMENT` | only place fingerprints are captured; keeps templates while a student is blocked |
+| Device 2 | `GATE_ENTRY` | receives users + templates automatically; every punch is an **ENTRY** |
+| Device 3 | `GATE_EXIT` | receives users + templates automatically; every punch is an **EXIT** |
+
+A student is **FULLY_SYNCHRONIZED** only when both gates are verified by read-back
+(SHA-256 of the template read from the gate equals the stored one). If one gate is done
+and the other is not, the status is **PARTIALLY_SYNCHRONIZED**. If both acknowledged but
+cannot be read back, it is **SYNCHRONIZED_UNVERIFIED**.
+
+- Setup, network, registration, troubleshooting, backup, security: [`docs/THREE_DEVICE_SETUP.md`](smart-campus-monitor/docs/THREE_DEVICE_SETUP.md)
+- Audit and plan: [`docs/THREE_DEVICE_AUDIT_AND_PLAN.md`](smart-campus-monitor/docs/THREE_DEVICE_AUDIT_AND_PLAN.md)
+- 24-step real-hardware test plan (not yet performed): [`docs/HARDWARE_TEST_PLAN.md`](smart-campus-monitor/docs/HARDWARE_TEST_PLAN.md)
+- What was tested, and how: [`docs/TEST_RESULTS.md`](smart-campus-monitor/docs/TEST_RESULTS.md)
+- Simulation without hardware: `SIMULATION_MODE=true`, then `node tools/simulateThreeDevices.js --seed` and
+  `node tools/simulateThreeDevices.js --url http://127.0.0.1:5000 --auto-capture` (everything labelled SIMULATED)
+
 ### Tests
 
 ```bash
@@ -1224,7 +1244,12 @@ a real MongoDB 7 before going live (indexes, partial unique index).
 | Menu enrolment → automatic template upload | handled for OPERLOG/FINGERTMP/BIODATA | whether/which table the X990 uploads |
 | Remote enrolment (push `ENROLL_FP`, pyzk `enroll_user`) | behind flags, off | whether either works |
 | Command queue (dedupe, retries, restart-safe, ordering) | ✅ | multiple `C:` lines per reply |
-| Block → delete everywhere incl. offline; software deny | ✅ | delete return code for missing users |
+| Block → delete from both gates (incl. offline), Device 1 keeps template; software deny | ✅ | delete return code for missing users |
+| Device roles, entry/exit by role, duplicate-punch window | ✅ | — |
+| Read-back verification (FULLY vs PARTIALLY vs UNVERIFIED) | ✅ sidecar and push read-back | whether the X990 answers a push template query |
+| Enrolment state (waiting/captured/failed/timeout, retry), duplicate template | ✅ | X990 menu duplicate-finger check |
+| Pull-mode terminals (sidecar executes queue, pulls attendance) | ✅ against fake device | pyzk `get_attendance` on X990 |
+| Simulation mode (labelled, never reaches real devices) | ✅ | — |
 | Unblock / restore without recapture | ✅ | that copied templates verify on another X990 |
 | Sidecar (pyzk) read/write/delete/backup/bulk load | ✅ against fake device | pyzk compatibility, session limit on 4370 |
 | Nightly reconciliation | ✅ sidecar/state sources; push source queues `DATA QUERY USERINFO` | whether an all-users query works over push |
