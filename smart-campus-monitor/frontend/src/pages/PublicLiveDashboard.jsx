@@ -1,545 +1,266 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import toast from 'react-hot-toast';
-import {
-  HiOutlineClock,
-  HiOutlineExclamationCircle,
-  HiOutlineOfficeBuilding,
-  HiOutlineShieldExclamation,
-  HiOutlineStatusOnline,
-} from 'react-icons/hi';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   BarElement,
-  LineElement,
-  PointElement,
-  Title,
   Tooltip,
   Legend,
-  Filler,
 } from 'chart.js';
-import { Line } from 'react-chartjs-2';
+import { Bar } from 'react-chartjs-2';
 import { getPublicLiveDashboardApi } from '../services/api';
+import CampusStage from '../components/brand/CampusStage';
+import { roleStatusFromTerminals } from '../components/brand/terminalStatus';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-);
-
-const hourlyLabels = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 const deriveSocketUrl = () => {
   const configured = import.meta.env.VITE_SOCKET_URL;
   if (configured) return configured;
-
   const apiUrl = import.meta.env.VITE_API_URL;
   if (!apiUrl || apiUrl.startsWith('/')) return undefined;
-
   return apiUrl.replace(/\/api\/?$/, '');
 };
 
-const formatDateTime = (value) =>
-  value
-    ? new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
-    : 'Never';
-
-const formatActivityText = (event) => {
-  const time = new Date(event.time).toLocaleTimeString('en-IN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-
-  if (event.eventType === 'unauthorized') {
-    return `Unauthorized - ${event.gateName || 'Gate'} Terminal ${event.terminalNumber ?? '-'} - ${time}`;
-  }
-
-  return `${String(event.eventType || 'scan').toUpperCase()} - ${event.gateName || 'Gate'} Terminal ${
-    event.terminalNumber ?? '-'
-  } - ${time}`;
+const EVENT_META = {
+  entry: ['bg-emerald-400', 'Entry'],
+  exit: ['bg-primary-400', 'Exit'],
+  unauthorized: ['bg-red-400', 'Unauthorised attempt'],
+  blocked: ['bg-red-400', 'Access denied'],
+  terminal_online: ['bg-emerald-400', 'Terminal connected'],
+  terminal_offline: ['bg-ink-400', 'Terminal disconnected'],
 };
 
-const buildScanEvent = (payload) => ({
-  id: `public-live-${Date.now()}-${Math.random()}`,
-  eventType: payload.type || 'scan',
-  gateName: payload.gateName,
-  gateNumber: payload.gateNumber,
-  terminalNumber: payload.terminalNumber,
-  terminalLabel: payload.terminalLabel,
-  machineNumber: payload.machineNumber,
-  time: payload.time || new Date().toISOString(),
-  hostelName: payload.hostelName || '',
-  studentType: payload.studentType || '',
-});
+const time = (value) =>
+  new Date(value).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
-const buildUnauthorizedEvent = (payload) => ({
-  id: `public-unauthorized-${Date.now()}-${Math.random()}`,
-  eventType: 'unauthorized',
-  gateName: payload.gateName,
-  gateNumber: payload.gateNumber,
-  terminalNumber: payload.terminalNumber,
-  terminalLabel: payload.terminalLabel,
-  machineNumber: payload.machineNumber,
-  time: payload.time || new Date().toISOString(),
-});
-
-const extractSettingValue = (value, fallback = '') => {
-  if (typeof value === 'string') return value;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return fallback;
-  return value.collegeName || value.collegeLogo || value.logo || value.name || value.url || fallback;
-};
-
-export default function PublicLiveDashboard() {
-  const socketRef = useRef(null);
-  const [loading, setLoading] = useState(true);
-  const [connected, setConnected] = useState(false);
-  const [dashboard, setDashboard] = useState(null);
-
-  const groupedTerminals = useMemo(
-    () =>
-      (dashboard?.terminals || []).reduce((acc, terminal) => {
-        const key = `${terminal.gateName} (Gate ${terminal.gateNumber})`;
-        if (!acc[key]) acc[key] = [];
-        acc[key].push(terminal);
-        return acc;
-      }, {}),
-    [dashboard]
-  );
-
+function Clock() {
+  const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await getPublicLiveDashboardApi();
-        setDashboard(res.data);
-      } catch (error) {
-        toast.error(error.response?.data?.message || 'Failed to load public dashboard');
-      } finally {
-        setLoading(false);
-      }
-    };
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div className="text-right">
+      <div className="font-mono text-2xl tabular-nums text-white">{time(now)}</div>
+      <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400">
+        {now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+      </div>
+    </div>
+  );
+}
 
-    load();
+/**
+ * Public, read-only campus screen (e.g. a monitor at the security desk or reception).
+ * Shows counts, gate status and anonymised movement only — never names, SAP IDs or photos.
+ * Data: GET /api/live (counts) + Socket.IO `public:activity` (anonymised events).
+ */
+export default function PublicLiveDashboard() {
+  const [dashboard, setDashboard] = useState(null);
+  const [error, setError] = useState('');
+  const [connected, setConnected] = useState(false);
+  const [events, setEvents] = useState([]);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await getPublicLiveDashboardApi();
+      setDashboard(res.data);
+      setError('');
+    } catch (_error) {
+      setError('Live data is unavailable right now.');
+    }
   }, []);
 
   useEffect(() => {
-    const socket = io(deriveSocketUrl(), {
-      autoConnect: true,
-      transports: ['websocket', 'polling'],
-    });
+    load();
+    const timer = setInterval(load, 60000);
+    return () => clearInterval(timer);
+  }, [load]);
 
-    socketRef.current = socket;
-
+  useEffect(() => {
+    const socket = io(deriveSocketUrl(), { autoConnect: true, transports: ['websocket', 'polling'] });
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
-
-    const updateTerminal = (payload, isOnline) => {
+    const onActivity = (event) => {
+      setEvents((current) => [{ ...event, id: `${event.time}-${Math.random()}` }, ...current].slice(0, 30));
       setDashboard((current) => {
         if (!current) return current;
-        return {
-          ...current,
-          terminals: (current.terminals || []).map((terminal) =>
-            terminal.machineNumber === payload.machineNumber
-              ? {
-                  ...terminal,
-                  isOnline,
-                  lastSeen: payload.lastSeen || new Date().toISOString(),
-                }
-              : terminal
-          ),
-        };
-      });
-    };
-
-    const updateHourly = (type, time) => {
-      const hour = new Date(time || new Date()).getHours();
-      setDashboard((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          hourly: {
-            ...(current.hourly || {}),
-            [hour]: {
-              entries: (current.hourly?.[hour]?.entries || 0) + (type === 'entry' ? 1 : 0),
-              exits: (current.hourly?.[hour]?.exits || 0) + (type === 'exit' ? 1 : 0),
-            },
-          },
-        };
-      });
-    };
-
-    const handleScanLive = (payload) => {
-      const event = buildScanEvent(payload);
-      setDashboard((current) => {
-        if (!current) return current;
-
-        const nextHostelCounts = [...(current.hostelOutsideCounts || [])];
-        if (payload.hostelName && payload.studentType === 'hosteller') {
-          const index = nextHostelCounts.findIndex((item) => item.hostelName === payload.hostelName);
-          if (index === -1) {
-            nextHostelCounts.push({
-              hostelName: payload.hostelName,
-              count: payload.type === 'exit' ? 1 : 0,
-            });
-          } else {
-            nextHostelCounts[index] = {
-              ...nextHostelCounts[index],
-              count:
-                payload.type === 'exit'
-                  ? nextHostelCounts[index].count + 1
-                  : Math.max(0, nextHostelCounts[index].count - 1),
-            };
-          }
+        const next = { ...current };
+        if (event.eventType === 'entry') next.currentlyInside = (current.currentlyInside || 0) + 1;
+        if (event.eventType === 'exit') next.currentlyInside = Math.max(0, (current.currentlyInside || 0) - 1);
+        if (event.eventType === 'unauthorized') next.unauthorizedCount = (current.unauthorizedCount || 0) + 1;
+        if (event.eventType === 'blocked') next.blockedCount = (current.blockedCount || 0) + 1;
+        if (event.eventType === 'terminal_online' || event.eventType === 'terminal_offline') {
+          next.terminals = (current.terminals || []).map((t) =>
+            t.machineNumber === event.machineNumber ? { ...t, isOnline: event.eventType === 'terminal_online' } : t
+          );
         }
-
-        return {
-          ...current,
-          currentlyInside:
-            payload.type === 'entry'
-              ? (current.currentlyInside || 0) + 1
-              : Math.max(0, (current.currentlyInside || 0) - 1),
-          liveActivity: [event, ...(current.liveActivity || [])].slice(0, 20),
-          hostelOutsideCounts: nextHostelCounts.sort((a, b) => a.hostelName.localeCompare(b.hostelName)),
-        };
-      });
-
-      updateHourly(payload.type, payload.time);
-    };
-
-    const handleUnauthorized = (payload) => {
-      const event = buildUnauthorizedEvent(payload);
-      setDashboard((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          unauthorizedCount: (current.unauthorizedCount || 0) + 1,
-          liveActivity: [event, ...(current.liveActivity || [])].slice(0, 20),
-        };
+        return next;
       });
     };
-
-    const handleBlocked = () => {
-      setDashboard((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          blockedCount: (current.blockedCount || 0) + 1,
-        };
-      });
-    };
-
-    const handleSettingsUpdated = (payload) => {
-      const key = String(payload?.key || '').toLowerCase();
-      setDashboard((current) => {
-        if (!current) return current;
-
-        if (key.includes('college') && key.includes('name')) {
-          return {
-            ...current,
-            collegeName: extractSettingValue(payload.newValue, current.collegeName),
-          };
-        }
-
-        if (key.includes('logo')) {
-          return {
-            ...current,
-            collegeLogo: extractSettingValue(payload.newValue, current.collegeLogo),
-          };
-        }
-
-        return current;
-      });
-    };
-
-    socket.on('scan:live', handleScanLive);
-    socket.on('scan:unauthorized', handleUnauthorized);
-    socket.on('scan:blocked', handleBlocked);
-    socket.on('terminal:online', (payload) => updateTerminal(payload, true));
-    socket.on('terminal:offline', (payload) => updateTerminal(payload, false));
-    socket.on('settings:updated', handleSettingsUpdated);
-
+    socket.on('public:activity', onActivity);
     return () => {
-      socket.off('scan:live', handleScanLive);
-      socket.off('scan:unauthorized', handleUnauthorized);
-      socket.off('scan:blocked', handleBlocked);
-      socket.off('terminal:online');
-      socket.off('terminal:offline');
-      socket.off('settings:updated', handleSettingsUpdated);
+      socket.off('public:activity', onActivity);
       socket.disconnect();
     };
   }, []);
 
-  const hourlyData = useMemo(
-    () => ({
-      labels: hourlyLabels,
-      datasets: [
-        {
-          label: 'Entries',
-          data: hourlyLabels.map((_, i) => dashboard?.hourly?.[i]?.entries || 0),
-          borderColor: 'rgb(22, 163, 74)',
-          backgroundColor: 'rgba(22, 163, 74, 0.18)',
-          fill: true,
-          tension: 0.3,
-        },
-        {
-          label: 'Exits',
-          data: hourlyLabels.map((_, i) => dashboard?.hourly?.[i]?.exits || 0),
-          borderColor: 'rgb(37, 99, 235)',
-          backgroundColor: 'rgba(37, 99, 235, 0.15)',
-          fill: true,
-          tension: 0.3,
-        },
-      ],
-    }),
-    [dashboard]
+  const status = useMemo(() => roleStatusFromTerminals(dashboard?.terminals), [dashboard]);
+  const online = (dashboard?.terminals || []).filter((t) => t.isOnline).length;
+  const total = (dashboard?.terminals || []).length;
+
+  // Recorded activity from the API (already anonymous) after live socket events.
+  const stream = useMemo(
+    () => [
+      ...events,
+      ...(dashboard?.liveActivity || []).map((a) => ({ ...a, eventType: a.eventType, id: a.id })),
+    ].slice(0, 14),
+    [events, dashboard]
   );
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-white" />
-      </div>
-    );
-  }
-
-  if (!dashboard) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-center text-white">
-        Unable to load the public live dashboard right now.
-      </div>
-    );
-  }
+  const hours = Array.from({ length: 18 }, (_, i) => i + 5);
+  const chartData = {
+    labels: hours.map((h) => `${String(h).padStart(2, '0')}`),
+    datasets: [
+      { label: 'Entries', data: hours.map((h) => dashboard?.hourly?.[h]?.entries || 0), backgroundColor: 'rgba(16,185,129,0.75)', borderRadius: 4 },
+      { label: 'Exits', data: hours.map((h) => dashboard?.hourly?.[h]?.exits || 0), backgroundColor: 'rgba(91,140,255,0.75)', borderRadius: 4 },
+    ],
+  };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.24),_transparent_32%),linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)] px-4 py-8 text-white md:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-col gap-4 rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-4">
-            {dashboard.collegeLogo ? (
-              <img
-                src={dashboard.collegeLogo}
-                alt={dashboard.collegeName}
-                className="h-16 w-16 rounded-2xl border border-white/10 bg-white/10 object-cover"
-              />
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-cyan-500/20 text-2xl font-bold text-cyan-100">
-                {(dashboard.collegeName || 'CL')
-                  .split(' ')
-                  .slice(0, 2)
-                  .map((part) => part[0] || '')
-                  .join('')
-                  .toUpperCase()}
-              </div>
-            )}
+    <div className="dark min-h-screen bg-ink-900 text-ink-100">
+      <header className="flex items-center justify-between gap-4 border-b border-white/5 px-6 py-4 md:px-10">
+        <div className="flex items-center gap-3">
+          {dashboard?.collegeLogo ? (
+            <img src={dashboard.collegeLogo} alt="" className="h-9 w-9 rounded-lg object-contain" />
+          ) : (
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-cyan-400/40 bg-cyan-400/10">
+              <span className="h-2 w-2 rounded-full bg-cyan-300" />
+            </span>
+          )}
+          <div>
+            <div className="font-display text-lg font-semibold text-white">{dashboard?.collegeName || 'Campus'}</div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400">Live campus status · public view</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className={connected ? 'chip-ok' : 'chip-warn'}>
+            <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'animate-pulse bg-emerald-400' : 'bg-amber-400'}`} />
+            {connected ? 'Live' : 'Reconnecting'}
+          </span>
+          <Clock />
+        </div>
+      </header>
+
+      {error && <p className="mx-6 mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-200 md:mx-10">{error}</p>}
+
+      <main className="grid gap-6 p-6 md:p-10 xl:grid-cols-[1.6fr_1fr]">
+        <section className="relative min-h-[420px] overflow-hidden rounded-3xl border border-white/5">
+          <CampusStage focus="command" status={status} className="absolute inset-0" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-ink-900/90 via-ink-900/30 to-transparent" />
+          <div className="relative flex h-full flex-col justify-between p-8">
             <div>
-              <p className="text-xs uppercase tracking-[0.35em] text-cyan-200/80">Public Live View</p>
-              <h1 className="text-3xl font-bold">{dashboard.collegeName}</h1>
-              <p className="mt-1 text-sm text-slate-300">
-                Read-only campus movement and terminal visibility without sensitive student details.
-              </p>
+              <p className="eyebrow mb-3">Inside campus now</p>
+              <div className="metric text-7xl text-white md:text-8xl" aria-live="polite">
+                {dashboard ? (dashboard.currentlyInside || 0).toLocaleString('en-IN') : '—'}
+              </div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-3 self-start rounded-full border border-white/10 bg-slate-900/60 px-4 py-2 text-sm text-slate-200">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${connected ? 'bg-emerald-400 shadow-[0_0_18px_rgba(74,222,128,0.8)]' : 'bg-red-400'}`}
-            />
-            {connected ? 'Live socket connected' : 'Reconnecting to live feed'}
-          </div>
-        </header>
-
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[24px] border border-emerald-400/20 bg-emerald-400/10 p-5">
-            <div className="flex items-center gap-3">
-              <HiOutlineOfficeBuilding className="h-6 w-6 text-emerald-300" />
-              <p className="text-sm text-emerald-100/80">Inside Campus</p>
+            <div className="grid max-w-md grid-cols-3 gap-6">
+              <div>
+                <div className={`metric text-3xl ${online === total && total ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  {dashboard ? `${online}/${total}` : '—'}
+                </div>
+                <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-300">Gates online</div>
+              </div>
+              <div>
+                <div className="metric text-3xl text-red-300">{dashboard?.unauthorizedCount ?? '—'}</div>
+                <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-300">Unauthorised today</div>
+              </div>
+              <div>
+                <div className="metric text-3xl text-amber-300">{dashboard?.blockedCount ?? '—'}</div>
+                <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-300">Denied today</div>
+              </div>
             </div>
-            <p className="mt-4 text-4xl font-bold">{dashboard.currentlyInside || 0}</p>
-          </div>
-
-          <div className="rounded-[24px] border border-amber-400/20 bg-amber-400/10 p-5">
-            <div className="flex items-center gap-3">
-              <HiOutlineExclamationCircle className="h-6 w-6 text-amber-300" />
-              <p className="text-sm text-amber-100/80">Unauthorized Today</p>
-            </div>
-            <p className="mt-4 text-4xl font-bold">{dashboard.unauthorizedCount || 0}</p>
-          </div>
-
-          <div className="rounded-[24px] border border-rose-400/20 bg-rose-400/10 p-5">
-            <div className="flex items-center gap-3">
-              <HiOutlineShieldExclamation className="h-6 w-6 text-rose-300" />
-              <p className="text-sm text-rose-100/80">Blocked Attempts Today</p>
-            </div>
-            <p className="mt-4 text-4xl font-bold">{dashboard.blockedCount || 0}</p>
-          </div>
-
-          <div className="rounded-[24px] border border-sky-400/20 bg-sky-400/10 p-5">
-            <div className="flex items-center gap-3">
-              <HiOutlineStatusOnline className="h-6 w-6 text-sky-300" />
-              <p className="text-sm text-sky-100/80">Terminals Online</p>
-            </div>
-            <p className="mt-4 text-4xl font-bold">
-              {(dashboard.terminals || []).filter((terminal) => terminal.isOnline).length}
-            </p>
           </div>
         </section>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr,0.8fr]">
-          <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 backdrop-blur">
-            <div className="mb-4 flex items-center gap-3">
-              <HiOutlineClock className="h-6 w-6 text-cyan-300" />
-              <div>
-                <h2 className="text-xl font-semibold">Today&apos;s Hourly Movement</h2>
-                <p className="text-sm text-slate-300">Live entry and exit trend across the campus.</p>
-              </div>
-            </div>
-            <div className="h-[320px]">
-              <Line
-                data={hourlyData}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                    legend: {
-                      position: 'bottom',
-                      labels: { color: '#e2e8f0' },
-                    },
-                  },
-                  scales: {
-                    x: {
-                      ticks: { color: '#cbd5e1' },
-                      grid: { color: 'rgba(148, 163, 184, 0.15)' },
-                    },
-                    y: {
-                      beginAtZero: true,
-                      ticks: { color: '#cbd5e1' },
-                      grid: { color: 'rgba(148, 163, 184, 0.15)' },
-                    },
-                  },
-                }}
-              />
-            </div>
-          </section>
+        <section className="panel flex flex-col p-6" aria-live="polite" aria-label="Recent gate activity">
+          <p className="eyebrow mb-4">Gate activity</p>
+          {stream.length === 0 ? (
+            <p className="text-sm text-ink-400">No movement recorded yet today.</p>
+          ) : (
+            <ul className="space-y-2">
+              {stream.map((event) => {
+                const [dot, label] = EVENT_META[event.eventType] || EVENT_META.entry;
+                return (
+                  <li key={event.id} className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+                    <span className="flex-1 text-sm text-white">{label}</span>
+                    <span className="truncate font-mono text-[11px] text-ink-400">{event.terminalLabel || event.gateName}</span>
+                    <span className="font-mono text-[11px] tabular-nums text-ink-300">{time(event.time)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
 
-          <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 backdrop-blur">
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold">Hostel-wise Outside Count</h2>
-              <p className="text-sm text-slate-300">Current hosteller movement by hostel.</p>
-            </div>
-            <div className="space-y-3">
-              {(dashboard.hostelOutsideCounts || []).length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/15 bg-slate-900/30 p-6 text-center text-sm text-slate-300">
-                  No hostel students are currently marked outside.
-                </div>
-              ) : (
-                dashboard.hostelOutsideCounts.map((item) => (
-                  <div
-                    key={item.hostelName}
-                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/35 px-4 py-3"
-                  >
-                    <div>
-                      <p className="font-medium text-white">{item.hostelName}</p>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Currently outside</p>
-                    </div>
-                    <span className="text-2xl font-bold text-cyan-300">{item.count}</span>
+        <section className="panel p-6 xl:col-span-1">
+          <p className="eyebrow mb-4">Today by hour</p>
+          <div className="h-56">
+            <Bar
+              data={chartData}
+              options={{
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#b5c0d0', boxWidth: 10 } } },
+                scales: {
+                  x: { ticks: { color: '#8593a8' }, grid: { display: false } },
+                  y: { ticks: { color: '#8593a8', precision: 0 }, grid: { color: 'rgba(148,170,210,0.08)' } },
+                },
+              }}
+            />
+          </div>
+        </section>
+
+        <section className="panel p-6">
+          <p className="eyebrow mb-4">Terminals</p>
+          <ul className="space-y-2">
+            {(dashboard?.terminals || []).map((t) => (
+              <li key={t.machineNumber} className="flex items-center justify-between gap-3 rounded-xl border border-white/5 px-3 py-2">
+                <div>
+                  <div className="text-sm text-white">{t.terminalLabel}</div>
+                  <div className="font-mono text-[10px] text-ink-400">
+                    {t.deviceRole === 'GATE_ENTRY' ? 'ENTRY' : t.deviceRole === 'GATE_EXIT' ? 'EXIT' : 'GATE'} · {t.scansToday || 0} scans today
                   </div>
-                ))
-              )}
-            </div>
-          </section>
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.95fr,1.05fr]">
-          <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 backdrop-blur">
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold">Live Activity Feed</h2>
-              <p className="text-sm text-slate-300">Last 20 gate events with public-safe details only.</p>
-            </div>
-            <div className="max-h-[520px] space-y-3 overflow-y-auto pr-1">
-              {(dashboard.liveActivity || []).map((event) => (
-                <div
-                  key={event.id}
-                  className={`rounded-2xl border px-4 py-3 ${
-                    event.eventType === 'unauthorized'
-                      ? 'border-orange-400/20 bg-orange-400/10'
-                      : 'border-white/10 bg-slate-900/35'
-                  }`}
-                >
-                  <p className="font-medium text-white">{formatActivityText(event)}</p>
-                  <p className="mt-1 text-xs text-slate-400">
-                    {event.terminalLabel || `Machine #${event.machineNumber ?? '-'}`}
-                  </p>
                 </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 backdrop-blur">
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold">Gate-wise Terminal Status</h2>
-              <p className="text-sm text-slate-300">Online and offline visibility for all gate terminals.</p>
-            </div>
-            <div className="max-h-[520px] space-y-4 overflow-y-auto pr-1">
-              {Object.entries(groupedTerminals).map(([gateLabel, terminals]) => (
-                <div key={gateLabel} className="space-y-3">
-                  <h3 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">
-                    {gateLabel}
-                  </h3>
-                  {terminals.map((terminal) => (
-                    <article
-                      key={terminal.machineNumber}
-                      className={`rounded-2xl border px-4 py-4 ${
-                        terminal.isOnline
-                          ? 'border-emerald-400/20 bg-emerald-400/10'
-                          : 'border-rose-400/20 bg-rose-400/10'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-white">{terminal.terminalLabel}</p>
-                          <p className="text-sm text-slate-300">Machine #{terminal.machineNumber}</p>
-                        </div>
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            terminal.isOnline
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-rose-100 text-rose-700'
-                          }`}
-                        >
-                          {terminal.isOnline ? 'Online' : 'Offline'}
-                        </span>
-                      </div>
-                      <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-200">
-                        <p>
-                          <span className="font-semibold text-white">Gate:</span> {terminal.gateNumber}
-                        </p>
-                        <p>
-                          <span className="font-semibold text-white">Terminal:</span> {terminal.terminalNumber}
-                        </p>
-                        <p>
-                          <span className="font-semibold text-white">Scans Today:</span> {terminal.scansToday || 0}
-                        </p>
-                        <p className="col-span-2">
-                          <span className="font-semibold text-white">Last Seen:</span>{' '}
-                          {formatDateTime(terminal.lastSeen)}
-                        </p>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      </div>
+                <span className={t.isOnline ? 'chip-ok' : 'chip-off'}>{t.isOnline ? 'Online' : 'Offline'}</span>
+              </li>
+            ))}
+            {!dashboard?.terminals?.length && <li className="text-sm text-ink-400">No gate terminals registered.</li>}
+          </ul>
+          {dashboard?.hostelOutsideCounts?.length > 0 && (
+            <>
+              <p className="eyebrow mb-3 mt-6">Hostellers outside</p>
+              <ul className="grid grid-cols-2 gap-2">
+                {dashboard.hostelOutsideCounts.map((h) => (
+                  <li key={h.hostelName} className="rounded-xl border border-white/5 px-3 py-2">
+                    <div className="metric text-2xl text-white">{h.count}</div>
+                    <div className="text-xs text-ink-400">{h.hostelName}</div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      </main>
+      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/5 px-6 py-4 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-400 md:px-10">
+        <span>Anonymous view · no names or IDs are shown</span>
+        <Link to="/" className="hover:text-white">
+          Sentinel platform
+        </Link>
+      </footer>
     </div>
   );
 }

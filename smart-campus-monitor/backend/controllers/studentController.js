@@ -80,11 +80,29 @@ exports.getStudentBySapId = async (req, res) => {
 // GET /api/students
 exports.getAllStudents = async (req, res) => {
   try {
-    const { category, search, page = 1, limit = 50 } = req.query;
+    const { category, page = 1 } = req.query;
+    let { search } = req.query;
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
     const filter = { isActive: true };
 
-    if (category) filter.category = category;
+    if (category) filter.category = String(category);
+    // Optional directory filters (exact match on known values only).
+    const exact = {
+      department: (v) => String(v).slice(0, 80),
+      year: (v) => (Number.isInteger(Number(v)) ? Number(v) : undefined),
+      studentType: (v) => (['day_scholar', 'hosteller'].includes(v) ? v : undefined),
+      fingerprintStatus: (v) => (['none', 'awaiting', 'enrolled'].includes(v) ? v : undefined),
+      accessStatus: (v) => (['allowed', 'blocked'].includes(v) ? v : undefined),
+      syncStatus: (v) => (/^[A-Z_]{3,40}$/.test(v) ? v : undefined),
+    };
+    Object.entries(exact).forEach(([key, sanitize]) => {
+      if (req.query[key] === undefined || req.query[key] === '') return;
+      const value = sanitize(req.query[key]);
+      if (value !== undefined) filter[key] = value;
+    });
     if (search) {
+      // Escape user input before using it in a regular expression.
+      search = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
         { sapId: { $regex: search, $options: 'i' } },

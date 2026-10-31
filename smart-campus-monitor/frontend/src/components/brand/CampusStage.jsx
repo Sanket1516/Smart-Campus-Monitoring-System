@@ -44,7 +44,7 @@ export default function CampusStage({ focus = 'overview', status, className = ''
   );
   const use3D = canRender && (!compact || allowCompact);
   return (
-    <div ref={ref} className={`relative ${className}`}>
+    <div ref={ref} className={`${/\b(absolute|fixed|sticky)\b/.test(className) ? '' : 'relative'} ${className}`}>
       {use3D ? (
         <SceneBoundary fallback={fallback}>
           <Suspense fallback={<div className="h-full w-full animate-pulse bg-ink-900" />}>

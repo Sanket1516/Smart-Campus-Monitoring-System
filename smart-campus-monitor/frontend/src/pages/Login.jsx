@@ -42,7 +42,7 @@ export default function Login() {
     <div className="dark grid min-h-screen bg-ink-900 text-ink-100 lg:grid-cols-[1.25fr_1fr]">
       {/* Left: cinematic campus */}
       <section className="relative hidden overflow-hidden border-r border-white/5 lg:block" aria-label="Sentinel platform">
-        <CampusStage className="absolute inset-0" />
+        <CampusStage focus="command" className="absolute inset-0" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/20 to-ink-950/60" />
         <div className="relative flex h-full flex-col justify-between p-10 xl:p-14">
           <Link to="/" className="flex w-fit items-center gap-2.5">

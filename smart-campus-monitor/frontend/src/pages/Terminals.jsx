@@ -13,6 +13,7 @@ import {
   HiOutlineTrash,
 } from 'react-icons/hi';
 import { useAuth } from '../context/AuthContext';
+import GateDeviceShowcase from '../components/brand/GateDeviceShowcase';
 import {
   createTerminalApi,
   deleteTerminalApi,
@@ -231,15 +232,11 @@ export default function Terminals() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="flex items-center gap-3 text-2xl font-bold text-gray-800">
-            <HiOutlineDesktopComputer className="h-7 w-7" />
-            Terminal Management
-          </h1>
-          <p className="text-sm text-gray-500">
-            Monitor every gate terminal, enrollment station, and last-seen status from one place.
-          </p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between relative overflow-hidden rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
+        <div className="max-w-3xl">
+          <p className="eyebrow mb-3">Infrastructure · Terminal management</p>
+          <h1 className="display-md text-white">Every Device. Connected. Configured. Monitored.</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-200 md:text-base">Register terminals, assign their role (enrolment, entry or exit) and watch connectivity, heartbeat and activity.</p>
         </div>
 
         <div className="flex gap-3">
@@ -266,6 +263,8 @@ export default function Terminals() {
           )}
         </div>
       </div>
+
+      <GateDeviceShowcase terminals={terminals} />
 
       {summary && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">

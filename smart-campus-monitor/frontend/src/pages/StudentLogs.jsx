@@ -66,10 +66,11 @@ export default function StudentLogs() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Entry Logs</h1>
-          <p className="text-gray-500">View student entry and exit records</p>
+      <div className="flex items-center justify-between flex-wrap gap-4 relative overflow-hidden rounded-3xl border border-white/5 bg-gradient-to-br from-ink-800 via-ink-850 to-ink-900 px-6 py-7 md:px-8">
+        <div className="max-w-3xl">
+          <p className="eyebrow mb-3">Records · Entry & exit history</p>
+          <h1 className="display-md text-white">Every Movement, On Record.</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-200 md:text-base">Search and filter every entry and exit, visitor and unauthorised attempt recorded by the gate terminals.</p>
         </div>
 
         {/* Tabs */}

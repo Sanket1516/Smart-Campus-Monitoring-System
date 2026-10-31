@@ -24,6 +24,11 @@ import { Bar, Line } from 'react-chartjs-2';
 import toast from 'react-hot-toast';
 import StatCard from '../components/StatCard';
 import DashboardChatWidget from '../components/DashboardChatWidget';
+import PageHeader from '../components/brand/PageHeader';
+import ArchitectureFlow from '../components/brand/ArchitectureFlow';
+import TerminalDevice from '../components/brand/TerminalDevice';
+import LiveEventStream from '../components/brand/LiveEventStream';
+import { roleStatusFromTerminals } from '../components/brand/terminalStatus';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -85,6 +90,72 @@ const STUDENT_GROUP_META = {
     empty: 'No hostellers are currently outside.',
   },
 };
+
+const relativeTime = (value) => {
+  if (!value) return 'never';
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} h ago`;
+  return `${Math.round(seconds / 86400)} d ago`;
+};
+
+/** Device 1 → backend → Device 2 / Device 3, from real terminal status (deviceRole). */
+function GateTopology({ terminals }) {
+  const status = roleStatusFromTerminals(terminals) || {};
+  const byRole = (role) => terminals.find((t) => t.deviceRole === role && t.enabled !== false);
+  const gates = [
+    ['GATE_ENTRY', 'ENTRY', 'Gate Entry · Terminal 01'],
+    ['GATE_EXIT', 'EXIT', 'Gate Exit · Terminal 02'],
+  ];
+  return (
+    <section className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-[1.5fr_1fr_1fr]">
+      <div className="panel p-5 lg:col-span-2 2xl:col-span-1">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="eyebrow">Enrolment → gate topology</p>
+          <span className="font-mono text-[10px] text-ink-400">live status</span>
+        </div>
+        <ArchitectureFlow status={status} />
+      </div>
+      {gates.map(([role, mode, label]) => {
+        const terminal = byRole(role);
+        return (
+          <div key={role} className="panel flex items-center gap-5 p-5">
+            <TerminalDevice
+              compact
+              mode={mode}
+              online={Boolean(terminal?.isOnline)}
+              title={terminal ? `#${terminal.machineNumber}` : '—'}
+              lines={terminal ? [`${terminal.scansToday || 0} SCANS TODAY`, terminal.deviceSN] : ['NOT ASSIGNED']}
+            />
+            <div className="min-w-0">
+              <div className="font-display text-lg font-semibold text-white">{label}</div>
+              {terminal ? (
+                <>
+                  <span className={`mt-2 ${terminal.isOnline ? 'chip-ok' : 'chip-off'}`}>{terminal.isOnline ? 'Online' : 'Offline'}</span>
+                  <dl className="mt-3 space-y-1 text-xs">
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-ink-400">Scans today</dt>
+                      <dd className="font-mono text-white">{terminal.scansToday || 0}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-ink-400">Last seen</dt>
+                      <dd className="font-mono text-white" title={formatDateTime(terminal.lastSeen)}>
+                        {relativeTime(terminal.lastSeen)}
+                      </dd>
+                    </div>
+                  </dl>
+                </>
+              ) : (
+                <p className="mt-2 text-sm text-amber-300">No terminal has the {role} role. Assign one in Terminal Management.</p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
 
 export default function Dashboard() {
   const { admin } = useAuth();
@@ -318,18 +389,22 @@ export default function Dashboard() {
       );
     };
 
+    const handleOnline = (payload) => handleTerminalStatus(payload, true);
+    const handleOffline = (payload) => handleTerminalStatus(payload, false);
+
     socket.on('scan:live', handleScanLive);
     socket.on('scan:unauthorized', handleUnauthorized);
     socket.on('scan:blocked', handleBlocked);
-    socket.on('terminal:online', (payload) => handleTerminalStatus(payload, true));
-    socket.on('terminal:offline', (payload) => handleTerminalStatus(payload, false));
+    socket.on('terminal:online', handleOnline);
+    socket.on('terminal:offline', handleOffline);
 
     return () => {
       socket.off('scan:live', handleScanLive);
       socket.off('scan:unauthorized', handleUnauthorized);
       socket.off('scan:blocked', handleBlocked);
-      socket.off('terminal:online');
-      socket.off('terminal:offline');
+      // Remove only this page's handlers (a bare off() would drop every listener app-wide).
+      socket.off('terminal:online', handleOnline);
+      socket.off('terminal:offline', handleOffline);
     };
   }, [socket, selectedHostelId, selectedHostel]);
 
@@ -423,39 +498,51 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">
-            {isWardenView ? 'Warden Dashboard' : 'Admin Dashboard'}
-          </h1>
-          <p className="text-sm text-gray-500">
-            One system, multiple views. Monitor gates, hostels, live scans, and approvals in one place.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          {!isWardenView && (
-            <select
-              value={selectedHostelId}
-              onChange={(e) => setSelectedHostelId(e.target.value)}
-              className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              <option value="all">All Campus</option>
-              {hostels.map((hostel) => (
-                <option key={hostel._id} value={hostel._id}>
-                  {hostel.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <button
-            type="button"
-            onClick={() => loadDashboard({ silent: true })}
-            className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            {refreshing ? 'Refreshing...' : 'Refresh View'}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow={`Security operations · ${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}`}
+        title={isWardenView ? `${selectedHostel?.name || 'Hostel'} Command` : 'Campus Command Centre'}
+        description="Occupancy, gate terminals, hostellers and security events, updated live from the entry and exit terminals."
+        actions={
+          <>
+            {!isWardenView && (
+              <select
+                value={selectedHostelId}
+                onChange={(e) => setSelectedHostelId(e.target.value)}
+                aria-label="Scope"
+                className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white outline-none focus:border-cyan-400/50"
+              >
+                <option value="all">All campus</option>
+                {hostels.map((hostel) => (
+                  <option key={hostel._id} value={hostel._id}>
+                    {hostel.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button type="button" onClick={() => loadDashboard({ silent: true })} className="btn-ghost py-2.5">
+              {refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </>
+        }
+        aside={
+          <div className="grid grid-cols-3 gap-6 text-right lg:gap-10">
+            <div>
+              <div className="metric text-5xl text-white md:text-6xl">{today.currentlyInside || 0}</div>
+              <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-300">Inside now</div>
+            </div>
+            <div>
+              <div className="metric text-3xl text-emerald-300 md:text-4xl">{today.enteredToday || 0}</div>
+              <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-300">Entries today</div>
+            </div>
+            <div>
+              <div className="metric text-3xl text-[#a5c0ff] md:text-4xl">{today.exitedToday || 0}</div>
+              <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-300">Exits today</div>
+            </div>
+          </div>
+        }
+      />
+
+      {!isWardenView && <GateTopology terminals={terminals} />}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <StatCard
@@ -651,7 +738,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="mb-4">
             <h2 className="text-lg font-semibold text-gray-800">Gate Status</h2>
@@ -694,6 +781,7 @@ export default function Dashboard() {
             ))}
           </div>
         </section>
+        <LiveEventStream className="max-h-[600px]" recent={dashboard.liveActivity || []} />
       </div>
       <DashboardChatWidget />
     </div>

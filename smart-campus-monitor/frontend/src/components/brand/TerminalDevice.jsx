@@ -41,7 +41,7 @@ export default function TerminalDevice({
         }}
       >
         <div className="mb-2 flex items-center justify-between px-1">
-          <span className="font-mono text-[9px] tracking-[0.25em] text-ink-300">eSSL · X990</span>
+          <span className="whitespace-nowrap font-mono text-[9px] tracking-[0.2em] text-ink-300">{compact ? 'X990' : 'eSSL · X990'}</span>
           <span className="flex items-center gap-1.5">
             <span
               className={`h-1.5 w-1.5 rounded-full ${offline ? '' : 'animate-pulse'}`}
