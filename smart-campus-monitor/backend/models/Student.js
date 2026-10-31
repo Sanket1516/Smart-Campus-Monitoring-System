@@ -148,6 +148,33 @@ const studentSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // ── Terminal sync ───────────────────────────────────────────────────
+    // zktUserID is the single PIN used for this student on every terminal.
+    fingerprintStatus: {
+      type: String,
+      enum: ['none', 'awaiting', 'enrolled'],
+      default: 'none',
+      index: true,
+    },
+    targetTerminalGroups: {
+      type: [String],
+      default: [],
+      set: (values) =>
+        Array.from(new Set((values || []).map((v) => String(v).trim().toLowerCase()).filter(Boolean))),
+    },
+    consentRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'BiometricConsent',
+      default: null,
+    },
+    enrollmentMethod: {
+      type: String,
+      enum: ['menu', 'pyzk_remote', 'push_remote', ''],
+      default: '',
+    },
+    enrollmentStartedAt: { type: Date, default: null },
+    biometricErasedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
@@ -156,6 +183,15 @@ studentSchema.index({ zktUserID: 1 }, { unique: true, sparse: true });
 studentSchema.index({ hostel: 1 });
 studentSchema.index({ studentType: 1 });
 studentSchema.index({ accessStatus: 1 });
+studentSchema.index({ targetTerminalGroups: 1 });
+
+// Legacy template field must never leave the server, even if selected explicitly.
+const stripBiometrics = (_doc, ret) => {
+  delete ret.fingerprintTemplate;
+  return ret;
+};
+studentSchema.set('toJSON', { transform: stripBiometrics });
+studentSchema.set('toObject', { transform: stripBiometrics });
 
 studentSchema.pre('validate', function (next) {
   const allowedDepartments = getDepartmentOptions(this.course);

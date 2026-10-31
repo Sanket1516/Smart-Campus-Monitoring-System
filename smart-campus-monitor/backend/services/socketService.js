@@ -12,6 +12,11 @@ const EVENTS = {
   hostelWardenChanged: 'hostel:warden_changed',
   unknownTerminal: 'unknown:terminal',
   settingsUpdated: 'settings:updated',
+  syncCommand: 'sync:command',
+  syncStudent: 'sync:student',
+  syncTerminal: 'sync:terminal',
+  syncAlert: 'sync:alert',
+  syncReconcile: 'sync:reconcile',
 };
 
 const setIo = (io) => {
@@ -52,6 +57,11 @@ const emitWardenLateReturn = (wardenId, payload) =>
 const emitHostelWardenChanged = (payload) => emit(EVENTS.hostelWardenChanged, payload);
 const emitUnknownTerminal = (payload) => emit(EVENTS.unknownTerminal, payload);
 const emitSettingsUpdated = (payload) => emit(EVENTS.settingsUpdated, payload);
+const emitSyncCommand = (payload) => emit(EVENTS.syncCommand, payload);
+const emitSyncStudent = (payload) => emit(EVENTS.syncStudent, payload);
+const emitSyncTerminal = (payload) => emit(EVENTS.syncTerminal, payload);
+const emitSyncAlert = (payload) => emit(EVENTS.syncAlert, payload);
+const emitSyncReconcile = (payload) => emit(EVENTS.syncReconcile, payload);
 
 module.exports = {
   EVENTS,
@@ -68,4 +78,9 @@ module.exports = {
   emitHostelWardenChanged,
   emitUnknownTerminal,
   emitSettingsUpdated,
+  emitSyncCommand,
+  emitSyncStudent,
+  emitSyncTerminal,
+  emitSyncAlert,
+  emitSyncReconcile,
 };

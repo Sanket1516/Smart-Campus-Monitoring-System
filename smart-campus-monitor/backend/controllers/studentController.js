@@ -8,6 +8,7 @@ const {
 const { createAuditLog } = require('../services/auditService');
 const { getStudentAllocations, reconcileStudentDeviceAllocations } = require('../services/deviceAllocationService');
 const { removeStudentFromDeviceAllocations, syncStudentToAllTerminals } = require('../services/fingerprintService');
+const syncHooks = require('../services/sync/hooks');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const fs = require('fs');
@@ -106,7 +107,12 @@ exports.getAllStudents = async (req, res) => {
 // POST /api/students
 exports.createStudent = async (req, res) => {
   try {
-    const student = await Student.create(normalizeStudentPayload(req.body));
+    const student = await Student.create({
+      ...normalizeStudentPayload(req.body),
+      // Only the finger capture is manual: user records are queued on every target terminal now.
+      fingerprintStatus: 'awaiting',
+    });
+    const terminalSync = await syncHooks.onStudentCreated(student, req.admin);
     const populatedStudent = await getStudentByFilter({ _id: student._id });
 
     await createAuditLog({
@@ -119,7 +125,7 @@ exports.createStudent = async (req, res) => {
       ipAddress: req.ip,
     });
 
-    res.status(201).json({ student: populatedStudent });
+    res.status(201).json({ student: populatedStudent, terminalSync });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -143,16 +149,21 @@ exports.updateStudent = async (req, res) => {
 
     let allocationResult = null;
 
-    if (student.fingerprintEnrolled) {
-      allocationResult = await reconcileStudentDeviceAllocations(student);
+    if (syncHooks.legacyDirectSync()) {
+      if (student.fingerprintEnrolled) {
+        allocationResult = await reconcileStudentDeviceAllocations(student);
 
-      if (allocationResult.removedAllocations.length) {
-        removeStudentFromDeviceAllocations(allocationResult.removedAllocations).catch((error) => {
-          console.error('Failed to remove obsolete student allocations:', error.message);
-        });
+        if (allocationResult.removedAllocations.length) {
+          removeStudentFromDeviceAllocations(allocationResult.removedAllocations).catch((error) => {
+            console.error('Failed to remove obsolete student allocations:', error.message);
+          });
+        }
+
+        await syncStudentToAllTerminals(student);
       }
-
-      await syncStudentToAllTerminals(student);
+    } else {
+      // Name or hostel/group changes: re-queue user records; prune old terminals.
+      await syncHooks.onStudentUpdated(student, req.admin);
     }
 
     await createAuditLog({
@@ -203,14 +214,20 @@ exports.deleteStudent = async (req, res) => {
       ipAddress: req.ip,
     });
 
-    if (previousAllocations.length) {
-      await DeviceAllocation.deleteMany({ studentId: student._id });
-      removeStudentFromDeviceAllocations(previousAllocations).catch((error) => {
-        console.error('Failed to remove device users for deactivated student:', error.message);
-      });
+    if (syncHooks.legacyDirectSync()) {
+      if (previousAllocations.length) {
+        await DeviceAllocation.deleteMany({ studentId: student._id });
+        removeStudentFromDeviceAllocations(previousAllocations).catch((error) => {
+          console.error('Failed to remove device users for deactivated student:', error.message);
+        });
+      }
+
+      return res.json({ message: 'Student deactivated' });
     }
 
-    res.json({ message: 'Student deactivated' });
+    // Student leaves: delete from every terminal and erase templates (DPDP s.8(7)).
+    const terminalSync = await syncHooks.onStudentDeactivated(student, req.admin);
+    res.json({ message: 'Student deactivated', terminalSync });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -244,6 +261,7 @@ const transformStudentData = (row) => {
   const normalizedCategory = normalizeCategory(rawCategory);
   
   const baseData = {
+    fingerprintStatus: 'awaiting',
     sapId: row.sapId ? row.sapId.toString().trim() : null,
     name: row.name ? row.name.toString().trim() : null,
     email: row.email ? row.email.toString().trim().toLowerCase() : null,
@@ -292,6 +310,7 @@ exports.uploadStudentsExcel = (req, res) => {
     }
 
     const filePath = req.file.path;
+    const uploadStartedAt = new Date(Date.now() - 1000);
     const results = {
       totalRows: 0,
       successCount: 0,
@@ -423,6 +442,15 @@ exports.uploadStudentsExcel = (req, res) => {
             throw error;
           }
         }
+      }
+
+      // Queue user records on terminals for every newly inserted student (background).
+      if (results.successCount > 0) {
+        const insertedIds = await Student.find({
+          sapId: { $in: studentsToInsert.map((entry) => entry.sapId) },
+          createdAt: { $gte: uploadStartedAt },
+        }).distinct('_id');
+        results.terminalSync = syncHooks.onStudentsImported(insertedIds, req.admin);
       }
 
       // Add validation errors to results
