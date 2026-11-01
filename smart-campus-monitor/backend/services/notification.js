@@ -2,6 +2,7 @@ const nodemailer = require('nodemailer');
 const { isHosteller } = require('../utils/studentMeta');
 const { getEmailSenderName, shouldSendEntryExitEmail } = require('./configService');
 const { composeParentEmail } = require('./emailTemplates');
+const { enqueue: enqueueEmail } = require('./emailQueue');
 
 let transporter = null;
 
@@ -20,28 +21,51 @@ const getTransporter = () => {
   return transporter;
 };
 
+const addressOf = (value) => String(value || '').match(/<([^>]+)>/)?.[1] || String(value || '').trim();
+
 /**
- * Send email notification to parent
+ * Gmail/SES only deliver reliably when the From address is the authenticated account. A different
+ * EMAIL_FROM address gets rewritten or spam-filtered, so the login address is used as the sender and
+ * the configured address becomes Reply-To.
+ */
+const buildSender = (senderName, env = process.env) => {
+  const login = addressOf(env.SMTP_USER);
+  const configured = addressOf(env.EMAIL_FROM);
+  const useLogin = /@/.test(login) && (!configured || configured.toLowerCase() !== login.toLowerCase());
+  const address = useLogin ? login : configured;
+  const name = senderName || String(env.EMAIL_FROM || '').match(/^"?([^"<]+?)"?\s*</)?.[1] || '';
+  return {
+    from: name ? { name, address } : address,
+    ...(useLogin && configured ? { replyTo: configured } : {}),
+  };
+};
+
+/**
+ * Send email notification to parent. Success means the SMTP server accepted the recipient;
+ * every send is logged with its recipient and subject so a missing email can be traced.
  */
 const sendEmail = async ({ to, subject, text, html, attachments }) => {
   try {
     const transport = getTransporter();
-    const senderName = await getEmailSenderName();
-    const fromAddress = process.env.EMAIL_FROM;
-    const from = senderName && fromAddress ? `"${senderName}" <${fromAddress}>` : fromAddress;
+    const sender = buildSender(await getEmailSenderName());
     const info = await transport.sendMail({
-      from,
+      ...sender,
       to,
       subject,
       text,
       html,
       ...(attachments?.length ? { attachments } : {}),
     });
-    console.log(`Email sent: ${info.messageId}`);
+    const accepted = info.accepted?.length || 0;
+    const rejected = info.rejected || [];
+    console.log(`Email ${accepted ? 'sent' : 'NOT accepted'}: ${info.messageId} to=${to} subject="${subject}" rejected=${rejected.length}`);
+    if (!accepted) return { success: false, permanent: true, error: `Recipient rejected: ${rejected.join(', ') || to}` };
     return { success: true, messageId: info.messageId };
   } catch (err) {
-    console.error('Email send error:', err.message);
-    return { success: false, error: err.message };
+    console.error(`Email send error to=${to} subject="${subject}":`, err.message);
+    // 5xx means the server refused this message for good, except auth errors an admin can fix (a retry then succeeds).
+    const permanent = err.responseCode >= 500 && ![530, 534, 535].includes(err.responseCode);
+    return { success: false, permanent, error: err.message };
   }
 };
 
@@ -142,7 +166,16 @@ const notifyParent = async (student, action, timestamp, event = {}) => {
     } catch (err) {
       console.error('Email template error, using basic template:', err.message);
     }
-    results.email = await sendEmail({ to: student.parentEmail, ...message, attachments: message.attachments });
+    // Queued, not sent inline: emails go out one at a time in scan order and survive restarts and retries.
+    const job = await enqueueEmail({
+      to: student.parentEmail,
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+      attachments: message.attachments,
+      meta: { studentId: String(student._id), sapId: student.sapId, action, at: timestamp },
+    });
+    results.email = { success: true, queued: true, jobId: job._id };
   }
 
   // Send SMS to parent
@@ -156,4 +189,4 @@ const notifyParent = async (student, action, timestamp, event = {}) => {
   return results;
 };
 
-module.exports = { sendEmail, sendSMS, notifyParent };
+module.exports = { sendEmail, sendSMS, notifyParent, buildSender };

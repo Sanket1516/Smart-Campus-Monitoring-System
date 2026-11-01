@@ -67,9 +67,10 @@ export default function Scanner() {
   const [mode, setMode] = useState('barcode'); // barcode | ocr
   const [lastScan, setLastScan] = useState(null);
   const [lastBarcodeValue, setLastBarcodeValue] = useState('');
-  const [processing, setProcessing] = useState(false);
+  const processing = false; // camera scanning is never locked while a scan is verified
   const [scanStage, setScanStage] = useState(null);
-  const processingRef = useRef(false);
+  const inFlightRef = useRef(new Set());
+  const stageTokenRef = useRef(0);
   const [manualInput, setManualInput] = useState('');
   const [visitorForm, setVisitorForm] = useState(createInitialVisitorForm);
   const [addingVisitor, setAddingVisitor] = useState(false);
@@ -196,9 +197,11 @@ export default function Scanner() {
   // Single entry point for every input method (camera barcode, OCR, manual): same backend call.
   const handleScan = useCallback(
     async (sapId) => {
-      if (processingRef.current) return;
-      processingRef.current = true;
-      setProcessing(true);
+      // Verification runs in the background: the camera keeps scanning, so only the same ID
+      // is ignored while its own request is still in flight.
+      if (inFlightRef.current.has(sapId)) return;
+      inFlightRef.current.add(sapId);
+      const token = ++stageTokenRef.current;
       setScanStage('verifying');
       try {
         const res = await processScanApi(sapId);
@@ -236,12 +239,11 @@ export default function Scanner() {
           toast.error('Scan failed: ' + (err.response?.data?.message || err.message));
         }
       } finally {
-        // Short cooldown so one card held in front of the camera cannot be processed twice.
+        // Same card held in view is ignored briefly; the camera itself is never paused.
+        setTimeout(() => inFlightRef.current.delete(sapId), 2500);
         setTimeout(() => {
-          processingRef.current = false;
-          setProcessing(false);
-          setScanStage(null);
-        }, 2000);
+          if (stageTokenRef.current === token) setScanStage(null);
+        }, 1500);
       }
     },
     [playSound]

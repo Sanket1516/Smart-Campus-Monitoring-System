@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import useCamera from '../hooks/useCamera';
 import { scanFrameStep } from '../utils/barcode/pipeline';
-import { getBarcodeFormats, isSelfChecking } from '../utils/barcode/config';
+import { getBarcodeFormats } from '../utils/barcode/config';
 import { extractStudentId, firstElevenDigits } from '../utils/barcode/extractId';
 
-const TICK_MS = 110; // upper bound on scan rate; the real rate is lower because frames never queue
-const MAX_FRAME_WIDTH = 1280;
+const TICK_MS = 20; // frames never queue, so the real rate is set by decode time
+const MAX_FRAME_WIDTH = 1600; // thin bars need every camera pixel: don't downscale
+const CROP_W = 0.9; // share of the video width/height decoded (the guide box is centred)
+const CROP_H = 0.45;
 const CONFIRM_WINDOW_MS = 2500;
 const SAME_VALUE_COOLDOWN_MS = 4000;
 const HELP_AFTER_MS = 10000;
@@ -68,6 +70,15 @@ const TONES = {
   green: 'bg-emerald-600/90 text-white',
 };
 
+// Passes that don't crop, rotate or rescale the frame report positions in frame coordinates.
+const POSITION_PASSES = new Set(['native', 'raw', 'raw-global', 'stretch']);
+
+const boundsOf = (points) => {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+};
+
 const debugEnabled = () => new URLSearchParams(window.location.search).has('debug');
 
 /**
@@ -84,6 +95,8 @@ export default function BarcodeScanner({ onDetected, onValueRead = null, enabled
   const onValueReadRef = useRef(onValueRead);
   const lockedRef = useRef(locked);
   const frameRef = useRef(null);
+  const overlayRef = useRef(null);
+  const boxTimerRef = useRef(null);
   const openedAt = useRef(0);
   const [stage, setStage] = useState('initializing');
   const [showHelp, setShowHelp] = useState(false);
@@ -113,6 +126,43 @@ export default function BarcodeScanner({ onDetected, onValueRead = null, enabled
     } else setStage('initializing');
   }, [enabled, ready, error, showDebug]);
 
+  // Draws a box around the barcode on the live view (frame -> video -> displayed pixels, object-fit: cover).
+  const drawBox = (points, view, color, holdMs) => {
+    const canvas = overlayRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video || !points?.length) return;
+    const cw = video.clientWidth;
+    const ch = video.clientHeight;
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = cw * ratio;
+    canvas.height = ch * ratio;
+    const s = Math.max(cw / video.videoWidth, ch / video.videoHeight);
+    const ox = (cw - video.videoWidth * s) / 2;
+    const oy = (ch - video.videoHeight * s) / 2;
+    const shown = points.map((p) => ({
+      x: ox + (view.sx + p.x / view.scale) * s,
+      y: oy + (view.sy + p.y / view.scale) * s,
+    }));
+    const b = boundsOf(shown);
+    const padX = 10;
+    const padY = Math.max(14, (48 - (b.y1 - b.y0)) / 2); // 1D codes are thin: give the box some height
+    const ctx = canvas.getContext('2d');
+    ctx.scale(ratio, ratio);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = `${color}33`;
+    ctx.beginPath();
+    ctx.roundRect(b.x0 - padX, b.y0 - padY, b.x1 - b.x0 + padX * 2, b.y1 - b.y0 + padY * 2, 8);
+    ctx.fill();
+    ctx.stroke();
+    clearTimeout(boxTimerRef.current);
+    boxTimerRef.current = setTimeout(() => {
+      canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    }, holdMs);
+  };
+  const drawBoxRef = useRef(drawBox);
+  drawBoxRef.current = drawBox;
+
   // Scan loop: one frame at a time, never queued, paused while verifying or when the tab is hidden.
   useEffect(() => {
     if (!enabled || !ready) return undefined;
@@ -135,12 +185,18 @@ export default function BarcodeScanner({ onDetected, onValueRead = null, enabled
       const skip = lockedRef.current || document.hidden || !video || video.readyState < 2 || !video.videoWidth;
       if (!skip) {
         try {
-          const scale = Math.min(1, MAX_FRAME_WIDTH / video.videoWidth);
+          // Decode only the centre band where the guide box sits: far fewer pixels per frame,
+          // so the phone gets through many more frames per second.
+          const sw = video.videoWidth * CROP_W;
+          const sh = video.videoHeight * CROP_H;
+          const sx = (video.videoWidth - sw) / 2;
+          const sy = (video.videoHeight - sh) / 2;
+          const scale = Math.min(1, MAX_FRAME_WIDTH / sw);
           const frame = frameRef.current || document.createElement('canvas');
           frameRef.current = frame;
-          frame.width = Math.round(video.videoWidth * scale);
-          frame.height = Math.round(video.videoHeight * scale);
-          frame.getContext('2d', { willReadFrequently: true }).drawImage(video, 0, 0, frame.width, frame.height);
+          frame.width = Math.round(sw * scale);
+          frame.height = Math.round(sh * scale);
+          frame.getContext('2d', { willReadFrequently: true }).drawImage(video, sx, sy, sw, sh, 0, 0, frame.width, frame.height);
 
           const t0 = performance.now();
           if (!nativeDetectorInitialized) {
@@ -157,6 +213,7 @@ export default function BarcodeScanner({ onDetected, onValueRead = null, enabled
                   text: nativeHit.rawValue,
                   format: nativeHit.format || '',
                   pass: 'native',
+                  points: nativeHit.cornerPoints?.length ? nativeHit.cornerPoints : null,
                 };
               }
             } catch (err) {
@@ -177,13 +234,22 @@ export default function BarcodeScanner({ onDetected, onValueRead = null, enabled
           }
 
           if (hit && active) {
+            const view = { sx, sy, scale };
+            const corners = hit.points
+              || (POSITION_PASSES.has(hit.pass) && hit.position ? Object.values(hit.position) : null);
+            const showBox = (color, holdMs) => corners && drawBoxRef.current(corners, view, color, holdMs);
+            showBox('#fbbf24', 450);
             const rawValue = String(hit.text ?? '');
             if (rawValue && rawValue !== lastObservedValue) {
               lastObservedValue = rawValue;
               onValueReadRef.current?.(rawValue);
             }
-            const parsed = extractStudentId(firstElevenDigits(rawValue));
-            if (!parsed.ok) {
+            const digits = firstElevenDigits(rawValue);
+            // A SAP ID is exactly 11 digits. Fewer means a partial read of a thin barcode: wait for a better frame.
+            const parsed = digits.length < 11 ? { ok: false, partial: true } : extractStudentId(digits);
+            if (parsed.partial) {
+              setStage('reading');
+            } else if (!parsed.ok) {
               if (lastInvalid.value !== hit.text || now - lastInvalid.at > 3000) {
                 lastInvalid = { value: hit.text, at: now };
                 setStage('invalid');
@@ -191,12 +257,14 @@ export default function BarcodeScanner({ onDetected, onValueRead = null, enabled
               }
             } else if (parsed.value === lastAccepted.value && now - lastAccepted.at < SAME_VALUE_COOLDOWN_MS) {
               // same card still in view: ignore
-            } else if (!isSelfChecking(hit.format) && !(pending.value === parsed.value && now - pending.at < CONFIRM_WINDOW_MS)) {
+            } else if (!(pending.value === parsed.value && now - pending.at < CONFIRM_WINDOW_MS)) {
+              // Every ID must be read identically twice: a misread rarely repeats exactly.
               pending = { value: parsed.value, at: now };
               setStage('reading');
             } else {
               pending = { value: '', at: 0 };
               lastAccepted = { value: parsed.value, at: now };
+              showBox('#34d399', 900);
               setShowHelp(false);
               setStage('detected');
               if (showDebug) {
@@ -255,6 +323,7 @@ export default function BarcodeScanner({ onDetected, onValueRead = null, enabled
       <style>{`@keyframes scanline{0%{transform:translateY(0)}100%{transform:translateY(150px)}}@media (prefers-reduced-motion:reduce){.scanline{animation:none!important}}`}</style>
       <div className="relative overflow-hidden rounded-lg bg-black">
         <video ref={videoRef} autoPlay playsInline muted className="w-full" style={{ maxHeight: '420px', minHeight: '280px', objectFit: 'cover' }} />
+        <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="relative h-40 w-[72%] max-w-xl rounded-lg border-2 border-emerald-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.28)]">
             <div className="absolute left-0 top-0 h-6 w-6 rounded-tl border-l-4 border-t-4 border-emerald-300" />

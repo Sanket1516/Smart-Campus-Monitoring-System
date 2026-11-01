@@ -132,10 +132,8 @@ const buildContext = ({ student, action, timestamp, event = {}, logs = [], brand
     },
     activity: computeActivity(logs, { type: action, at }, timeZone),
     contact: { phone, email: supportEmail, portalUrl: portal, privacyUrl: privacy },
-    subject:
-      action === 'entry'
-        ? `Campus Entry Confirmed | ${clean(student.name, 80) || 'Student'}`
-        : `Campus Exit Recorded | ${clean(student.name, 80) || 'Student'}`,
+    // The student's name stays out of the subject: Gmail dropped messages with "... | <name>" subjects.
+    subject: action === 'entry' ? 'Campus entry confirmed for your ward' : 'Campus exit recorded for your ward',
   };
 };
 

@@ -10,6 +10,7 @@
     "demo": "node utils/seedDemo.js",
     "email:assets": "node scripts/buildEmailAssets.js",
     "email:preview": "node scripts/previewEmails.js",
+    "email:test": "node scripts/testEmail.js",
     "test": "jest"
   },
   "dependencies": {
