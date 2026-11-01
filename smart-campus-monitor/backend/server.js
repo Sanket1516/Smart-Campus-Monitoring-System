@@ -17,6 +17,7 @@ const { register, metricsMiddleware } = require('./utils/metrics');
 
 // Route imports
 const authRoutes = require('./routes/auth');
+const studentBulkRoutes = require('./routes/studentBulk');
 const studentRoutes = require('./routes/students');
 const scanRoutes = require('./routes/scan');
 const logRoutes = require('./routes/logs');
@@ -57,6 +58,7 @@ const syncConfig = getSyncConfig();
 if (process.env.NODE_ENV !== 'test') {
   connectDB()
     .then(() => require('./services/emailQueue').start())
+    .then(() => require('./services/bulkEnrollment').recoverInterrupted())
     .catch((error) => console.error('Email queue start failed:', error.message));
 }
 
@@ -98,6 +100,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/students/bulk', studentBulkRoutes); // before /api/students so /bulk is not read as a SAP ID
 app.use('/api/students', studentRoutes);
 app.use('/api/scan', scanRoutes);
 app.use('/api/logs', logRoutes);

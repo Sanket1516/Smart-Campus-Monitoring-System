@@ -1,196 +1,83 @@
-# Excel Student Upload Feature
+# Bulk Student Enrollment (Excel)
 
-## Overview
+Administrators enroll many students from one Excel file. Nothing is saved until the preview has been reviewed and
+the enrollment is explicitly confirmed.
 
-This feature allows college administrators to bulk upload student data via Excel files (.xlsx/.xls). The system automatically validates, transforms, and stores student records in MongoDB with proper error handling.
+**Download template → fill → upload → validate → preview → confirm → enroll in batches → report**
 
-## Features
+## Using it
 
-✅ **File Upload**
-- Accepts `.xlsx` and `.xls` files only
-- Multer-based file handling with temporary storage
-- Automatic file cleanup after processing
+1. Sign in as an **administrator** (security guards and wardens cannot use it).
+2. Student Management → **Upload Excel** → **Download template**.
+3. Fill one student per row on the `Students` sheet and delete the grey sample row. The `Instructions` sheet
+   lists every column, what is required and the allowed values. Dropdowns are provided for category, course,
+   department, year and hostel.
+4. Upload the `.xlsx` file. Every row is validated and duplicates are detected; the result is shown as a preview
+   with filters, search and row-level error messages that quote the **Excel row number**.
+5. Confirm. Valid new students are saved in batches while a progress bar follows the server's real counters.
+6. Download the reports: full summary, enrolled, failed, invalid, duplicates and already-enrolled (all `.xlsx`).
 
-✅ **Data Validation**
-- Required fields: sapId, name, email, category, course, department
-- Category must be "dayscholars" or "hostellers"
-- Department must match course (schema validation)
-- Comprehensive error reporting with row numbers
+## Columns (the real Student schema fields)
 
-✅ **Smart Transformation**
-- Category-based auto-configuration:
-  - **Hostellers**: `studentType='hosteller'`, `isHosteller=true`, `wardenApprovalRequired=true`
-  - **Day Scholars**: `studentType='day_scholar'`, `isHosteller=false`, `wardenApprovalRequired=false`, `hostel=null`, `roomNumber=""`
-- Empty cells converted to null/defaults (not string "NULL")
+| Column | Required | Rule |
+|---|---|---|
+| sapId | yes | 9 to 11 digits (`SAP_ID_PATTERN`, same default as the gate scanner); kept as text, leading zeros preserved |
+| name | yes | 2 to 100 characters, letters, spaces and `. ' -` |
+| email | yes | valid email |
+| category | yes | `dayscholars` or `hostellers` ("day scholar", "hosteller" also understood) |
+| course | yes | `pharmacy`, `engineering`, `mbatech`, `pharmatech` |
+| department | yes | must belong to the course (`bpharm`; `computer science` / `computer engineering`; `mbatech`; `pharmatech`) |
+| year | no | whole number 1 to 5 |
+| phone, parentPhone | no | 10 to 15 digits, optional `+` |
+| parentEmail | no | valid email; a warning is shown if neither parent email nor phone is given (notifications need one) |
+| address | no | up to 300 characters |
+| bloodGroup | no | A+ A- B+ B- AB+ AB- O+ O- (anything else is left blank with a warning) |
+| hostel | hostellers only | a registered hostel **name or code**; ignored for day scholars |
+| roomNumber | no | hostellers only, up to 20 characters |
 
-✅ **Robust Error Handling**
-- Continues inserting valid rows even if some fail
-- Returns detailed results:
-  - Total rows processed
-  - Success count
-  - Failure count with reasons
-- Handles duplicate sapId gracefully
-- Validates department against course
+The schema has no date fields, so there are no date columns.
 
-✅ **User Experience**
-- Download Excel template with sample data
-- Real-time upload progress
-- Error report download as CSV
-- Visual summary with success/failure counts
-- Detailed error table with row numbers
+## Rules and safeguards
 
-## Usage
+- `.xlsx` only (old `.xls` is refused with instructions to re-save), 5 MB and 5000 students per file
+  (`BULK_MAX_FILE_MB`, `BULK_MAX_ROWS`). Files are parsed in memory, never written to disk.
+- Duplicates are detected **inside the file** (first occurrence wins) and **against MongoDB**. Existing students
+  are never overwritten; rows whose name/email differ from the stored record are flagged as conflicts.
+- Duplicates are checked again right before every batch, and the unique index on `sapId` is the final guard, so
+  concurrent uploads or two admins can never create a duplicate student. Every row ends as `enrolled`, `failed`
+  or `skipped`; none is lost, and database problems are never reported as success.
+- Batches of 200 (`BULK_BATCH_SIZE`) run in the background; the page polls `GET /api/students/bulk/:id`.
+- If the server restarts mid-run, the run is marked failed on startup; students already saved are kept and a
+  re-upload skips them.
+- Reports neutralise spreadsheet formula injection (`=`, `+`, `-`, `@` prefixes).
+- Audit log entries are written for validation, cancellation and enrollment. Runs are kept 30 days.
 
-### 1. Access the Feature
-1. Login as admin
-2. Navigate to **Student Management** page
-3. Click **Upload Excel** button
+## API (all administrator-only)
 
-### 2. Prepare Your Excel File
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/students/bulk/template` | download the template |
+| POST | `/api/students/bulk/validate` | multipart `file`; parses, validates, returns the pending run |
+| GET | `/api/students/bulk/:id` | status, totals, progress |
+| GET | `/api/students/bulk/:id/rows?filter=&search=&page=` | preview / result rows |
+| POST | `/api/students/bulk/:id/confirm` | start enrollment (202); a second confirm gets 409 |
+| DELETE | `/api/students/bulk/:id` | discard an unconfirmed upload |
+| GET | `/api/students/bulk/:id/report?type=` | `summary` `enrolled` `failed` `invalid` `duplicates` `existing` `skipped` `all` |
 
-**Required Columns:**
-- `sapId` - Unique student ID
-- `name` - Student name
-- `email` - Student email
-- `category` - Must be "dayscholars" or "hostellers"
-- `course` - pharmacy, engineering, mbatech, pharmatech
-- `department` - Must match course
+The old `POST /api/students/upload` (immediate insert, no preview) was retired and now returns 410.
 
-**Optional Columns:**
-- `year` - Academic year (1-5)
-- `phone` - Student phone
-- `parentEmail` - Parent email
-- `parentPhone` - Parent phone
-- `address` - Student address
-- `bloodGroup` - Blood group
-- `hostel` - Hostel name (for hostellers)
-- `roomNumber` - Room number (for hostellers)
+## Gate machines and terminals
 
-**Valid Course-Department Combinations:**
-- `pharmacy` → `bpharm`
-- `engineering` → `computer science`, `computer engineering`
-- `mbatech` → `mbatech`
-- `pharmatech` → `pharmatech`
+Enrolled students live in the central MongoDB. The ENTRY and EXIT gate machines look students up through the
+existing student/scan APIs, so they can verify a new student immediately. The new students are also queued for
+terminal provisioning with the existing `onStudentsImported` sync hook (user records only).
 
-### 3. Upload Process
-1. Click **"Download Template"** to get a sample Excel file
-2. Fill in your student data (keep the header row)
-3. Click **"Select Excel File"** and choose your file
-4. Click **"Upload"** to process
-5. Review the results:
-   - Success/failure summary
-   - Detailed error list (if any)
-   - Download error report for failed rows
+**Not covered:** fingerprint templates. Bulk enrollment creates the student record; the fingerprint is enrolled
+separately on the admin enrollment terminal and then synchronised by the existing terminal-sync workflow. Excel
+cannot carry biometric data.
 
-## Example Excel Data
+## Tests
 
-| sapId | name | email | category | course | department | year | phone | bloodGroup |
-|-------|------|-------|----------|--------|------------|------|-------|------------|
-| SAP001 | John Doe | john@example.com | dayscholars | engineering | computer science | 2 | 9876543210 | O+ |
-| SAP002 | Jane Smith | jane@example.com | hostellers | pharmacy | bpharm | 3 | 9876543212 | A+ |
-
-## API Endpoint
-
-```
-POST /api/students/upload
-Authorization: Bearer <admin-token>
-Content-Type: multipart/form-data
-
-Body: FormData with 'file' field
-```
-
-**Response:**
-```json
-{
-  "message": "Upload processing completed",
-  "results": {
-    "totalRows": 10,
-    "successCount": 8,
-    "failureCount": 2,
-    "errors": [
-      {
-        "row": 5,
-        "error": "Missing required fields: email"
-      },
-      {
-        "sapId": "SAP010",
-        "name": "John Doe",
-        "error": "Duplicate sapId: SAP010"
-      }
-    ]
-  }
-}
-```
-
-## Technical Details
-
-### Backend Components
-- **Controller**: `backend/controllers/studentController.js`
-  - `uploadStudentsExcel()` - Handles upload, parsing, validation, transformation, insertion
-  - `transformStudentData()` - Applies category-based rules
-- **Route**: `POST /api/students/upload` (admin only)
-- **Dependencies**: `multer`, `xlsx`
-- **Storage**: `backend/uploads/` (temporary, auto-deleted)
-
-### Frontend Components
-- **Modal**: `frontend/src/components/ExcelUploadModal.jsx`
-  - File selection with validation
-  - Upload progress indicator
-  - Results display with error table
-  - Template and error report download
-- **Integration**: `frontend/src/pages/StudentManagement.jsx`
-  - Upload button in toolbar
-  - Auto-refresh after successful upload
-- **API**: `frontend/src/services/api.js`
-  - `uploadStudentsExcelApi(formData)`
-
-### Data Flow
-1. Admin selects Excel file
-2. Frontend validates file extension
-3. FormData sent to `/api/students/upload`
-4. Multer saves file to `uploads/`
-5. xlsx parses first sheet to JSON
-6. Each row validated and transformed
-7. `Student.insertMany()` with `ordered:false`
-8. Errors collected from writeErrors
-9. File deleted from uploads/
-10. Results returned to frontend
-11. Frontend displays summary and errors
-
-## Error Handling
-
-### Common Errors
-- **"Missing required fields"** - Fill in sapId, name, email, category, course, department
-- **"Invalid category"** - Use "dayscholars" or "hostellers"
-- **"Duplicate sapId"** - Student with this ID already exists
-- **"Department must be one of..."** - Department doesn't match course
-- **"Only .xlsx and .xls files allowed"** - Upload Excel file format
-
-### Troubleshooting
-1. Download error report CSV to see all failures
-2. Fix errors in original Excel file
-3. Re-upload (successful rows won't duplicate due to unique sapId)
-4. Or manually add failed students via regular form
-
-## Testing
-
-A sample Excel file is available at:
-`backend/sample-students.xlsx`
-
-Test data includes:
-- 1 day scholar (engineering)
-- 1 hosteller (pharmacy)
-
-## Security
-- Admin authentication required (`protect`, `authorize('admin')`)
-- File type validation (only .xlsx, .xls)
-- Temporary file storage with auto-cleanup
-- Audit logging of upload operations
-
-## Future Enhancements
-- ✨ Preview Excel data before uploading
-- ✨ Progress bar for large files
-- ✨ Duplicate detection warnings before insert
-- ✨ Update existing students option
-- ✨ Support for multiple sheets
-- ✨ Field mapping UI for custom Excel formats
+- Backend: `cd backend && npx jest tests/bulkEnrollment.unit.test.js tests/bulkEnrollment.api.test.js`
+  (the API tests start a real in-memory MongoDB with the real unique indexes).
+- Frontend: `cd frontend && npx vitest run src/tests/ExcelUploadModal.test.jsx`
