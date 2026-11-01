@@ -50,6 +50,9 @@ services:
       - campus-network
     env_file:
       - ./backend/.env
+    volumes:
+      # Uploaded student photos survive container rebuilds
+      - uploads-data:/app/uploads
     environment:
       NODE_ENV: production
       MONGO_URI: mongodb://mongodb:27017/smart_campus
@@ -69,6 +72,10 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      # HTTPS certificate for phone camera access (kept out of git, mounted read-only)
+      - ./frontend/certs:/etc/nginx/certs:ro
     depends_on:
       - backend
     networks:
@@ -104,6 +111,8 @@ networks:
     driver: bridge
 
 volumes:
+  uploads-data:
+    driver: local
   mongo-data:
     driver: local
   ollama-data:
