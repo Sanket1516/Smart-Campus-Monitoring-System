@@ -47,9 +47,17 @@ export const getStudentApi = (sapId) => api.get(`/students/${sapId}`);
 export const createStudentApi = (data) => api.post('/students', data);
 export const updateStudentApi = (sapId, data) => api.put(`/students/${sapId}`, data);
 export const deleteStudentApi = (sapId) => api.delete(`/students/${sapId}`);
-export const uploadStudentsExcelApi = (formData) => api.post('/students/upload', formData, {
-  headers: { 'Content-Type': 'multipart/form-data' }
-});
+
+// Bulk enrollment (Excel): template -> validate -> preview rows -> confirm -> progress -> reports
+export const downloadBulkTemplateApi = () => api.get('/students/bulk/template', { responseType: 'blob' });
+export const validateBulkUploadApi = (formData, onUploadProgress) =>
+  api.post('/students/bulk/validate', formData, { headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress });
+export const getBulkStatusApi = (id) => api.get(`/students/bulk/${id}`);
+export const getBulkRowsApi = (id, params) => api.get(`/students/bulk/${id}/rows`, { params });
+export const confirmBulkApi = (id) => api.post(`/students/bulk/${id}/confirm`);
+export const cancelBulkApi = (id) => api.delete(`/students/bulk/${id}`);
+export const downloadBulkReportApi = (id, type) =>
+  api.get(`/students/bulk/${id}/report`, { params: { type }, responseType: 'blob' });
 
 // Logs
 export const getLogsApi = (params) => api.get('/logs', { params });
