@@ -17,7 +17,7 @@ describe('email templates', () => {
     expect(out.html).toMatch(/^<!doctype html>/);
     expect(out.html).not.toMatch(/undefined|\[object Object\]|NaN/);
     expect(out.text).not.toMatch(/undefined|\[object Object\]|NaN/);
-    expect(out.subject).toMatch(/^Campus (Entry Confirmed|Exit Recorded) \| /);
+    expect(out.subject).toMatch(/^Campus (entry confirmed|exit recorded) for your ward$/);
   });
 
   test('entry is green + entry headline; exit is amber + exit headline', () => {
@@ -27,8 +27,8 @@ describe('email templates', () => {
     expect(entry.html).toContain('Campus Entry Successful!');
     expect(exit.html).toContain('EXIT RECORDED');
     expect(exit.html).toContain('Campus Exit Recorded Successfully!');
-    expect(entry.subject).toBe('Campus Entry Confirmed | Neha Kapoor');
-    expect(exit.subject).toBe('Campus Exit Recorded | Neha Kapoor');
+    expect(entry.subject).toBe('Campus entry confirmed for your ward');
+    expect(exit.subject).toBe('Campus exit recorded for your ward');
   });
 
   test('SAP ID is masked and raw id never appears', () => {

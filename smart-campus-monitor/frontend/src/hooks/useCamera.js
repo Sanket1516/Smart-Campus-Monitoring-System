@@ -51,7 +51,7 @@ export default function useCamera(enabled) {
     const attempts = () => {
       const base = deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } };
       return [
-        { video: { ...base, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } },
+        { video: { ...base, width: { ideal: 2560 }, height: { ideal: 1440 }, frameRate: { ideal: 30 } } },
         { video: { ...base, width: { ideal: 1280 }, height: { ideal: 720 } } },
         { video: deviceId ? { deviceId: { exact: deviceId } } : true },
         { video: true },

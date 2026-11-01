@@ -55,7 +55,9 @@ const syncConfig = getSyncConfig();
 
 // Connect to MongoDB
 if (process.env.NODE_ENV !== 'test') {
-  connectDB();
+  connectDB()
+    .then(() => require('./services/emailQueue').start())
+    .catch((error) => console.error('Email queue start failed:', error.message));
 }
 
 // ADMS push endpoints for terminals. Mounted before the JSON/urlencoded parsers

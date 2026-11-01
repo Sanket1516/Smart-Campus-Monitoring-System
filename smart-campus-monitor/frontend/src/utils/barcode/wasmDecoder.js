@@ -32,5 +32,5 @@ export const decodeImageData = async (
     maxNumberOfSymbols: 1,
   });
   const hit = results.find((r) => r.isValid);
-  return hit ? { text: hit.text, format: hit.format, ms: performance.now() - started } : null;
+  return hit ? { text: hit.text, format: hit.format, position: hit.position, ms: performance.now() - started } : null;
 };

@@ -1,6 +1,6 @@
 // Frame -> decoded barcode. Cheap passes first; heavier image treatments only when needed.
 // Everything runs locally in the browser; no frame is ever sent to the server.
-import { decodeImageData } from './wasmDecoder';
+import { decodeOffThread as decodeImageData } from './decodeClient';
 import { denoise, drawScaled, rotateBy, sharpen, stretchContrast } from '../frameProcessing';
 
 const imageDataOf = (canvas) =>
@@ -81,9 +81,11 @@ export const scanFramePhoto = async (frame, formats = [], onProgress = null) => 
 export const scanFrameStep = async (frame, tick, formats = []) => {
   const light = PASSES.filter((p) => !p.heavy);
   const heavy = PASSES.filter((p) => p.heavy);
-  for (const pass of [...light, heavy[tick % heavy.length]]) {
-    const hit = await runPass(pass, frame, formats);
-    if (hit) return hit;
-  }
-  return null;
+  // One pass per frame keeps the loop fast: a plain decode most ticks, the contrast/binarizer
+  // variants every few ticks, and one rotating heavy treatment only every 4th tick.
+  const pass = tick % 4 === 3
+    ? heavy[Math.floor(tick / 4) % heavy.length]
+    : light[tick % 4 === 0 ? 0 : tick % 4];
+  const options = pass.heavy ? {} : { tryHarder: false, tryDownscale: false };
+  return runPass(pass, frame, formats, options);
 };
